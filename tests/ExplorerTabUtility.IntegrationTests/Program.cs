@@ -27,11 +27,22 @@ internal static class Program
     private static ExplorerWatcher? _watcher;
     private static nint _target;
     private static int _failures;
+    private static bool _manualTaskbar;
+    private sealed class LaunchCompletionListener(TaskCompletionSource<bool> completion) : TraceListener
+    {
+        public override void Write(string? message) { }
+        public override void WriteLine(string? message)
+        {
+            if (message?.StartsWith("Taskbar direct launch returned in ", StringComparison.Ordinal) == true)
+                completion.TrySetResult(true);
+        }
+    }
     private static readonly string SettingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ExplorerTabUtility", "settings.json");
 
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
+        _manualTaskbar = args.Contains("--taskbar");
         if (Process.GetProcessesByName("ExplorerTabUtility").Length != 0)
         {
             Console.Error.WriteLine("Stop the running ExplorerTabUtility before executing these integration tests.");
@@ -98,6 +109,12 @@ internal static class Program
         _watcher.SetReuseTabs(true);
         _watcher.StartHook();
 
+        if (_manualTaskbar)
+        {
+            await TaskbarLaunch();
+            return;
+        }
+
         // A known folder-only request can return as soon as navigation is issued.
         var direct = Path.Combine(Root, "direct folder open");
         Directory.CreateDirectory(direct);
@@ -155,6 +172,74 @@ internal static class Program
             return source != null && IsWindowVisible((nint)(int)source!.HWND);
         }, "native source is visible after cancellation");
         Console.WriteLine("PASS shutdown during conversion preserves native window");
+    }
+
+    private static async Task TaskbarLaunch()
+    {
+        _watcher!.SetReuseTabs(false);
+        var before = ExplorerTabUtility.Helpers.Helper.GetAllExplorerTabs(_target).Count();
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var listener = new LaunchCompletionListener(completion);
+        Trace.Listeners.Add(listener);
+        using var comparer = new ExplorerTabUtility.Interop.ShellPathComparer();
+        var defaultLocation = ExplorerTabUtility.Helpers.Helper.GetDefaultExplorerLocation();
+        bool IsDefaultTabActive()
+        {
+            foreach (dynamic window in _shell.Windows())
+            {
+                try
+                {
+                    if ((nint)(int)window.HWND != _target) continue;
+                    var provider = (ExplorerTabUtility.Interop.IServiceProvider)(object)window;
+                    var guid = typeof(ExplorerTabUtility.Interop.IShellBrowser).GUID;
+                    provider.QueryService(ref guid, ref guid, out var browser);
+                    if (browser == null) continue;
+                    nint tab;
+                    try { browser.GetWindow(out tab); }
+                    finally { Marshal.ReleaseComObject(browser); }
+                    if (tab != WinApi.FindWindowEx(_target, 0, "ShellTabWindowClass", null)) continue;
+                    var location = (string)window.LocationURL;
+                    if (string.IsNullOrWhiteSpace(location)) location = (string)window.Document.Folder.Self.Path;
+                    return comparer.IsEquivalent(defaultLocation, ExplorerTabUtility.Helpers.Helper.NormalizeLocation(location));
+                }
+                catch (COMException) { }
+            }
+            return false;
+        }
+        var windowsBefore = new System.Collections.Generic.HashSet<nint>(ExplorerTabUtility.Helpers.Helper.GetAllExplorerWindows());
+        var created = new System.Collections.Generic.HashSet<nint>();
+        ExplorerTabUtility.WinAPI.WinEventDelegate observed = (nint _, uint _, nint window, int obj, int child, uint _, uint _) =>
+        {
+            if (obj == 0 && child == 0 && !windowsBefore.Contains(window) && WinApi.IsWindowHasClassName(window, "CabinetWClass"))
+                created.Add(window);
+        };
+        var hook = WinApi.SetWinEventHook(0x8000, 0x8000, 0, observed, 0, 0, 2);
+        if (hook == 0) throw new Exception("Cannot observe native window creation.");
+        try
+        {
+            Console.WriteLine("READY: close any open jump list, right-click the Explorer taskbar icon, then click File Explorer once.");
+            Console.Out.Flush();
+            var watch = Stopwatch.StartNew();
+            while (watch.ElapsedMilliseconds < 120000)
+            {
+                if (completion.Task.IsCompleted && ExplorerTabUtility.Helpers.Helper.GetAllExplorerTabs(_target).Count() > before && WinApi.GetForegroundWindow() == _target && IsDefaultTabActive())
+                {
+                    // Let already queued WinEvents arrive before asserting no source was created.
+                    await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                    if (created.Count != 0) throw new Exception("Taskbar launch used a native source window instead of the direct route.");
+                    Console.WriteLine("PASS taskbar launch: active target gained the default folder tab, zero native source windows created.");
+                    return;
+                }
+                await Task.Delay(25);
+            }
+            throw new TimeoutException("Manual taskbar launch did not arrive.");
+        }
+        finally
+        {
+            WinApi.UnhookWinEvent(hook);
+            Trace.Listeners.Remove(listener);
+            GC.KeepAlive(observed);
+        }
     }
 
     private static void SelectCommand(string file) => Process.Start("explorer.exe", "/select,\"" + file + "\"");

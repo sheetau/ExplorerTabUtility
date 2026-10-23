@@ -35,7 +35,7 @@ jobs:
         shell: pwsh
         run: |
           $runtime = if ('${{ matrix.framework }}' -eq 'net481') { 'NetFW4.8.1' } else { 'Net9.0_FrameworkDependent' }
-          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { 'v2.5.2-' + $env:GITHUB_SHA.Substring(0, 7) }
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { 'v2.5.3-' + $env:GITHUB_SHA.Substring(0, 7) }
           $name = "ExplorerTabUtility_$($version)_${{ matrix.arch }}_$runtime.zip"
           $source = 'publish/${{ matrix.framework }}/${{ matrix.arch }}'
           Copy-Item -LiteralPath LICENSE -Destination "$source/LICENSE"

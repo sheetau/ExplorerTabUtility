@@ -49,6 +49,7 @@ public class ExplorerWatcher : IHook
     private string _defaultLocation = null!;
     private bool _reuseTabs = true;
     private bool _isForcingTabs;
+    private TaskbarLaunchHook? _taskbarLaunchHook;
     public bool IsHookActive => _isForcingTabs;
     public event Action? OnShellInitialized;
 
@@ -65,14 +66,18 @@ public class ExplorerWatcher : IHook
 
     public void StartHook()
     {
+        if (!_dispatcher.CheckAccess()) { _dispatcher.Invoke(StartHook); return; }
         if (_isForcingTabs) return;
         _isForcingTabs = true;
+        _taskbarLaunchHook?.Start();
     }
 
     public void StopHook()
     {
+        if (!_dispatcher.CheckAccess()) { _dispatcher.Invoke(StopHook); return; }
         if (!_isForcingTabs) return;
         _isForcingTabs = false;
+        _taskbarLaunchHook?.Stop();
     }
     public void SetReuseTabs(bool reuseTabs) => _reuseTabs = reuseTabs;
 
@@ -411,6 +416,8 @@ public class ExplorerWatcher : IHook
     }
     private async void OnShellWindowRegistered(int __)
     {
+        if (_disposed) return;
+        var cancellationToken = _shellLifetime.Token;
         var showAgain = true;
         nint hWnd = 0;
         InternetExplorer? sourceWindow = null;
@@ -419,12 +426,13 @@ public class ExplorerWatcher : IHook
         {
             var shouldOpenAsWindow = Helper.IsCtrlShiftDown();
 
-            var window = await Helper.DoUntilNotDefaultAsync(() => GetRecentlyCreatedWindow(out windowInfo!), 2_500, 70);
+            var window = await Helper.DoUntilNotDefaultAsync(() => cancellationToken.IsCancellationRequested ? null : GetRecentlyCreatedWindow(out windowInfo!), 2_500, 70, cancellationToken);
             if (window == null) return;
             sourceWindow = window;
 
             using var initialView = windowInfo.InitialViewReady;
             await GetTabHandle(window);
+            cancellationToken.ThrowIfCancellationRequested();
 
             hWnd = new IntPtr(window.HWND);
             
@@ -457,6 +465,7 @@ public class ExplorerWatcher : IHook
                 PreventWindowHiding(hWnd);
 
             // Check if it is a detached tab
+            cancellationToken.ThrowIfCancellationRequested();
             var isRecentlyClosed = TryGetRecentlyClosedWindow(location, out var closedWindow);
             if (isRecentlyClosed)
                 SelectItems(window, closedWindow!.SelectedItems);
@@ -471,7 +480,8 @@ public class ExplorerWatcher : IHook
                 var request = new WindowRecord(location, hWnd);
                 async Task CaptureSelection()
                 {
-                    await initialView!.WaitAsync(_shellLifetime.Token);
+                    await initialView!.WaitAsync(cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
                     if (!IsAtLocation(window, request.Location))
                         throw new InvalidOperationException("The source navigated during tab conversion.");
                     request.SelectedItems = GetSelectedItems(window);
@@ -480,6 +490,7 @@ public class ExplorerWatcher : IHook
                 var opening = OpenTabNavigateWithSelection(request, _mainWindowHandle, selectionReady: capture);
                 // Prepare the destination while the native source enumerates.
                 await Task.WhenAll(capture, opening);
+                cancellationToken.ThrowIfCancellationRequested();
                 if (!await opening)
                 {
                     windowInfo.IsConversionSource = false;
@@ -497,13 +508,15 @@ public class ExplorerWatcher : IHook
             // OnQuit might fire after ShellWindowRegistered in case of reattached tab (and there were selected files)
             if (!isRecentlyClosed)
             {
-                isRecentlyClosed = await Helper.DoUntilNotDefaultAsync(() => TryGetRecentlyClosedWindow(location, out closedWindow), 700, 50);
+                isRecentlyClosed = await Helper.DoUntilNotDefaultAsync(() => !cancellationToken.IsCancellationRequested && TryGetRecentlyClosedWindow(location, out closedWindow), 700, 50, cancellationToken);
                 if (isRecentlyClosed)
                     SelectItems(window, closedWindow!.SelectedItems);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             HookWindowEvents(window, windowInfo);
         }
+        catch (Exception) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception ex)
         {
             Trace.WriteLine($"Explorer tab conversion failed: {ex}");
@@ -1035,6 +1048,15 @@ public class ExplorerWatcher : IHook
         _shellWindows = new ShellWindows();
 
         _defaultLocation = Helper.GetDefaultExplorerLocation(_shellPathComparer);
+        _taskbarLaunchHook = new TaskbarLaunchHook(_dispatcher,
+            () => !_disposed && _isForcingTabs && Helper.IsFileExplorerWindow(_mainWindowHandle),
+            async () =>
+            {
+                var request = new WindowRecord(_defaultLocation);
+                if (!await OpenTabNavigateWithSelection(request, _mainWindowHandle) && !_disposed)
+                    await OpenNewWindowWithSelection(request);
+            });
+        if (_isForcingTabs) _taskbarLaunchHook.Start();
         
         if (SettingsManager.ClosedWindows != null)
             lock (_closedWindowsLock) _closedWindows.AddRange(SettingsManager.ClosedWindows);
@@ -1065,11 +1087,14 @@ public class ExplorerWatcher : IHook
         }
 
         if (!hasOpen) return;
+        _mainWindowHandle = GetMainWindowHWnd(0);
         lock (_closedWindowsLock)
             foreach (var window in _closedWindows) window.Restore = false;
     }
     private void DisposeShellObjects()
     {
+        _taskbarLaunchHook?.Dispose();
+        _taskbarLaunchHook = null;
         _shellLifetime.Cancel();
         if (!_disposed) _shellLifetime = new CancellationTokenSource();
         foreach (var (_, info) in _windowEntryDict)

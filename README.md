@@ -2,6 +2,12 @@
 
 This is sheetau's independently maintained version of [w4po/ExplorerTabUtility](https://github.com/w4po/ExplorerTabUtility), based on v2.5.0 (`fad736353210d36595c6e6caa77ac7ad9129b3ee`). It keeps Explorer's windows as tabs while preserving the file selection from **Show in folder / Reveal in Explorer** requests.
 
+## What changed in 2.5.3
+
+- With **Window Hook** enabled and an existing Explorer target window, an unmodified left click on the taskbar jump list's **File Explorer** launch item opens the default folder directly as a tab. Native source window creation and selection capture are bypassed for that identified command.
+- The command is identified using the ShellExperienceHost menu's `SystemItemList` / `Open` automation identifiers and the English/Japanese Explorer launch label. Folder destinations and other applications' menus are excluded. UI Automation runs on a worker; mouse callbacks check cached geometry and current foreground state only.
+- Unknown layouts/languages, modified clicks, keyboard activation, and launching with no existing target use the normal Windows path. The feature follows Window Hook, independently of the keyboard/mouse profile toggles. Pinned shortcuts and registry settings are unchanged.
+
 ## What changed in 2.5.2
 
 - Present a new or reused destination tab as soon as navigation is issued, before waiting for source selection capture or destination enumeration.
@@ -55,6 +61,8 @@ msbuild tests/ExplorerTabUtility.IntegrationTests/ExplorerTabUtility.Integration
 dotnet tests/ExplorerTabUtility.IntegrationTests/bin/Release/net9.0-windows/ExplorerTabUtility.IntegrationTests.dll
 & tests/ExplorerTabUtility.IntegrationTests/bin/Release/net481/ExplorerTabUtility.IntegrationTests.exe
 ```
+
+The optional `--taskbar` argument runs a manual taskbar launch test; wait for READY and click File Explorer in the real taskbar context menu. It verifies the configured default folder in the active target tab and zero native source windows.
 
 Coverage: known folder-only requests without a selection wait; new and reused `/select` requests; same basenames with different extensions; Shell API single and multiple selection; subfolder selection; Japanese, spaces and `#` in paths; ordinary empty folders; inactive-tab activation including repeated identical selection; immediate reuse; reuse disabled; and cancellation during conversion. See [VALIDATION.md](VALIDATION.md) for the recorded results.
 
