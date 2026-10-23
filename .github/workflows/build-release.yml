@@ -16,28 +16,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        framework: [net9.0-windows, net481]
-        arch: [x64, x86, arm64]
+        arch: [x64, arm64]
     steps:
       - uses: actions/checkout@v4
       - uses: microsoft/setup-msbuild@v2
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
+          dotnet-version: 10.0.x
       - name: Build application and acceptance harness
         shell: pwsh
-        run: msbuild ExplorerTabUtility.sln /restore /p:Configuration=Release /p:TargetFramework=${{ matrix.framework }} /v:minimal
+        run: msbuild ExplorerTabUtility.sln /restore /p:Configuration=Release /p:RuntimeIdentifier=win-${{ matrix.arch }} /v:minimal
       - name: Publish
         shell: pwsh
-        run: msbuild ExplorerTabUtility/ExplorerTabUtility.csproj /restore /t:Publish /p:Configuration=Release /p:TargetFramework=${{ matrix.framework }} /p:RuntimeIdentifier=win-${{ matrix.arch }} /p:PublishDir=../publish/${{ matrix.framework }}/${{ matrix.arch }}/ /v:minimal
+        run: msbuild ExplorerTabUtility/ExplorerTabUtility.csproj /restore /t:Publish /p:Configuration=Release /p:RuntimeIdentifier=win-${{ matrix.arch }} /p:SelfContained=true /p:PublishDir=../publish/winui/${{ matrix.arch }}/ /v:minimal
       - name: Package
         id: package
         shell: pwsh
         run: |
-          $runtime = if ('${{ matrix.framework }}' -eq 'net481') { 'NetFW4.8.1' } else { 'Net9.0_FrameworkDependent' }
-          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { 'v2.5.4-' + $env:GITHUB_SHA.Substring(0, 7) }
-          $name = "ExplorerTabUtility_$($version)_${{ matrix.arch }}_$runtime.zip"
-          $source = 'publish/${{ matrix.framework }}/${{ matrix.arch }}'
+          [xml]$project = Get-Content -LiteralPath ExplorerTabUtility/ExplorerTabUtility.csproj -Encoding utf8 -Raw
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { 'v' + $project.Project.PropertyGroup.Version + '-' + $env:GITHUB_SHA.Substring(0, 7) }
+          $name = "ExplorerTabUtility_$($version)_${{ matrix.arch }}_WinUI3.zip"
+          $source = 'publish/winui/${{ matrix.arch }}'
           Copy-Item -LiteralPath LICENSE -Destination "$source/LICENSE"
           Copy-Item -LiteralPath README.md -Destination "$source/README.md"
           Compress-Archive -Path "$source/*" -DestinationPath $name

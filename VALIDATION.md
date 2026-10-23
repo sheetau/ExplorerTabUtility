@@ -1,5 +1,19 @@
 # Validation
 
+## WinUI 3 migration (3.0.0)
+
+Tested on 2026-10-23 on Windows 11 x64, with Visual Studio MSBuild 18.9 and .NET SDK 10.0.400. The solution builds without warnings or errors. The application uses Microsoft.WindowsAppSDK 2.5.1 and .NET 10; the previous WPF/.NET Framework targets have been removed.
+
+Focused runtime checks passed: shortcut add/edit/remove autosave with stable IDs; known folder-only direct tab navigation; new `/select`; reused `/select` switching between identical basenames with different extensions; and Shell API multi-selection. Observed times were 431 ms for the folder-only method return, 2992 ms for a new reveal tab, 1729 ms for the reused reveal, and 208 ms for multi-selection. These are single-run observations. The full historical suite below was not rerun for this UI change.
+
+The new settings window was launched with isolated settings and read through native UI Automation. Both sections, standard toggles, 76-pixel shortcut headers, four-pixel row spacing, compact toggle widths, and the integrated title/caption controls were present. The user reviewed the screen and requested matching card dimensions/corners, reduced spacing, and the integrated title bar; those changes were applied. Native shortcut recording, expanded-row appearance, tray interactions, and ARM64 execution have not been exhaustively verified through automated UI input.
+
+The taskbar discovery code now reads native UI Automation interfaces directly, removing the old WPF automation dependency. The launch routing and pinned-folder resolution logic are unchanged; prior real user click results are recorded below. Settings and profile storage use the original location and field names, and tests use a separate temporary directory.
+
+Portable x64 and ARM64 builds were published with both runtimes included. The publish target explicitly includes generated XBF files and the application PRI index; omitting these caused a startup parse failure during validation and was corrected. The x64 archive was extracted and launched successfully with the existing three user profiles. Relaunching while running opened settings in the existing process. Both ZIPs passed CRC checks. ARM64 was built, but was not executed on ARM64 hardware.
+
+The earlier sections below describe previous releases and their previous runtimes. Use the current commands in [README.md](README.md) to repeat checks on 3.0.
+
 ## Pinned folders (2.5.4): focused validation
 
 At the user's request, validation for this change was limited to building both targets and one real pinned-folder interaction; the 13 existing scenarios were not rerun. The user clicked the pinned Downloads row in the actual taskbar context menu. The Framework 4.8.1 harness observed the direct route returning in 424 ms, verified that the active target tab was the exact expected folder, and observed zero native source windows. Thirteen visible pinned-folder rows were resolved from Quick Access. This timing is a single observation, not a guarantee.

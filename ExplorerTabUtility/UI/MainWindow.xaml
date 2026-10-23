@@ -1,0 +1,30 @@
+<Window x:Class="ExplorerTabUtility.UI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Explorer Tab Utility">
+    <Window.SystemBackdrop><MicaBackdrop /></Window.SystemBackdrop>
+    <Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <TitleBar x:Name="AppTitleBar" Title="Explorer Tab Utility" />
+        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel MaxWidth="960" HorizontalAlignment="Stretch" Spacing="20" Margin="32,16,32,24">
+                <TextBlock Text="Settings" Style="{ThemeResource TitleTextBlockStyle}" />
+                <InfoBar x:Name="StatusBar" IsOpen="False" IsClosable="True" Visibility="Collapsed" />
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Shortcuts" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                    <StackPanel x:Name="ProfilesPanel" Spacing="4" />
+                    <Button x:Name="AddShortcut" Click="AddShortcut_Click" AutomationProperties.Name="Add shortcut" HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE710;" FontSize="14" />
+                            <TextBlock Text="Add shortcut" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Preferences" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                    <StackPanel x:Name="PreferencesPanel" Spacing="4" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Window>

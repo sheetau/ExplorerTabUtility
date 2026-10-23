@@ -2,8 +2,6 @@ using Shell32;
 using SHDocVw;
 using System;
 using System.Linq;
-using System.Windows;
-using System.Windows.Threading;
 using System.Threading;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -15,16 +13,14 @@ using ExplorerTabUtility.Interop;
 using ExplorerTabUtility.Managers;
 using ExplorerTabUtility.Models;
 using ExplorerTabUtility.WinAPI;
-using ExplorerTabUtility.UI.Views;
 
 namespace ExplorerTabUtility.Hooks;
 
 using WindowEntry = DualKeyEntry<InternetExplorer, nint?, WindowInfo>;
 
-[Fody.ConfigureAwait(true)]
 public class ExplorerWatcher : IHook
 {
-    private readonly Dispatcher _dispatcher = Application.Current.Dispatcher;
+    private readonly UiDispatcher _dispatcher = UiDispatcher.Current;
     private CancellationTokenSource _shellLifetime = new();
     private bool _disposed;
     private static bool _instanceRunning;
@@ -380,7 +376,7 @@ public class ExplorerWatcher : IHook
         if (!WinApi.IsWindowHasClassName(hWnd, "CabinetWClass")) return;
 
         if (_windowEntryDict.Count < 2 || Helper.IsCtrlShiftDown()) return;
-        Helper.HideWindow(hWnd, SettingsManager.HaveThemeIssue);
+        Helper.HideWindow(hWnd);
     }
     private InternetExplorer? GetRecentlyCreatedWindow(out WindowInfo? windowInfo)
     {
@@ -460,7 +456,7 @@ public class ExplorerWatcher : IHook
                                     Helper.GetAllExplorerTabs(hWnd).Take(2).Count() == 1;
 
             if (shouldReopenAsTab)
-                Helper.HideWindow(hWnd, SettingsManager.HaveThemeIssue);
+                Helper.HideWindow(hWnd);
             else
                 PreventWindowHiding(hWnd);
 
@@ -534,8 +530,7 @@ public class ExplorerWatcher : IHook
                 PreventWindowHiding(hWnd);
                 await Helper.DoUntilNotDefaultAsync(() => Helper.ShowWindow(hWnd, removeCache: false), 1_500, 200);
 
-                if (!SettingsManager.HaveThemeIssue)
-                    Helper.UpdateWindowLayered(hWnd, remove: true);
+                Helper.UpdateWindowLayered(hWnd, remove: true);
 
                 // OnWindowShown might fire after ShellWindowRegistered and hide it again, keep the cache, wait a bit, then remove it.
                 _ = Task.Delay(3000).ContinueWith(t => Helper.HiddenWindows.TryRemove(hWnd, out _), TaskScheduler.Default);
@@ -653,19 +648,11 @@ public class ExplorerWatcher : IHook
 
     private async Task RestorePreviousWindows()
     {
-        var result = await RunInStaThread(() => CustomMessageBox.Show(
-            "Do you want to restore previously opened windows?",
-            "Explorer Tab Utility",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question));
-
-        foreach (var record in _closedWindows.Where(record => record.Restore))
+        foreach (var record in _closedWindows.Where(record => record.Restore).ToArray())
         {
             record.Restore = false;
             
-            if (result != MessageBoxResult.Yes) continue;
-            
-            _ = OpenTabNavigateWithSelection(record);
+            await OpenTabNavigateWithSelection(record);
         }
     }
     private async Task OpenNewWindowWithSelection(WindowRecord windowToOpen, bool duplicate = true, bool lockToOpenWindows = true)

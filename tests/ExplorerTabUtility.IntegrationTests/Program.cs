@@ -5,8 +5,9 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Threading;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Dispatching;
+using ExplorerTabUtility.Helpers;
 using ExplorerTabUtility.Hooks;
 using ExplorerTabUtility.WinAPI;
 using ExplorerTabUtility.Managers;
@@ -28,6 +29,7 @@ internal static class Program
     private static nint _target;
     private static int _failures;
     private static bool _manualTaskbar;
+    private static bool _smoke;
     private static string? _expectedPinned;
     private sealed class LaunchCompletionListener(TaskCompletionSource<bool> completion) : TraceListener
     {
@@ -38,11 +40,10 @@ internal static class Program
                 completion.TrySetResult(true);
         }
     }
-    private static readonly string SettingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ExplorerTabUtility", "settings.json");
-
     [STAThread]
     private static int Main(string[] args)
     {
+        _smoke = args.Contains("--smoke");
         _manualTaskbar = args.Contains("--taskbar");
         var pinnedIndex = Array.IndexOf(args, "--taskbar-pinned");
         if (pinnedIndex >= 0)
@@ -56,47 +57,56 @@ internal static class Program
             Console.Error.WriteLine("Stop the running ExplorerTabUtility before executing these integration tests.");
             return 2;
         }
-        var settingsBackup = File.Exists(SettingsPath) ? File.ReadAllBytes(SettingsPath) : null;
-        var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-        Trace.Listeners.Add(new ConsoleTraceListener());
-        app.Startup += async (_, _) =>
+        Environment.SetEnvironmentVariable("EXPLORER_TAB_UTILITY_DATA_DIR", Path.Combine(Root, "settings"));
+        WinRT.ComWrappersSupport.InitializeComWrappers();
+        try { Application.Start(_ =>
         {
-            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(app.Dispatcher));
-            try { await Run(); }
-            catch (Exception ex) { Console.Error.WriteLine(ex); _failures++; }
-            finally
-            {
-                try
-                {
-                    _watcher?.Dispose();
-                    var fixtures = new System.Collections.Generic.List<object>();
-                    if (_shell != null)
-                        foreach (dynamic window in _shell.Windows())
-                        {
-                            try { if (Uri.UnescapeDataString((string)window.LocationURL).Contains(Path.GetFileName(Root))) fixtures.Add(window); }
-                            catch (COMException) { }
-                        }
-                    foreach (dynamic window in fixtures)
-                        try { window.Quit(); }
-                        catch (COMException) { }
-                }
-                finally
-                {
-                    if (settingsBackup != null) File.WriteAllBytes(SettingsPath, settingsBackup);
-                    else if (File.Exists(SettingsPath)) File.Delete(SettingsPath);
-                    app.Shutdown();
-                }
-            }
-        };
-        app.Run();
+            UiDispatcher.Initialize(DispatcherQueue.GetForCurrentThread());
+            new ExplorerTabUtility.IntegrationTests.TestApp();
+        }); }
+        catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
         Console.WriteLine($"Failures: {_failures}");
         return _failures == 0 ? 0 : 1;
+    }
+
+    internal static async Task RunAll()
+    {
+        Trace.Listeners.Add(new ConsoleTraceListener());
+        try { await Run(); }
+        catch (Exception ex) { Console.Error.WriteLine(ex); _failures++; }
+        finally
+        {
+            _watcher?.Dispose();
+            var fixtures = new System.Collections.Generic.List<object>();
+            if (_shell != null)
+                foreach (dynamic window in _shell.Windows())
+                {
+                    try { if (Uri.UnescapeDataString((string)window.LocationURL).Contains(Path.GetFileName(Root))) fixtures.Add(window); }
+                    catch (COMException) { }
+                }
+            foreach (dynamic window in fixtures)
+                try { window.Quit(); } catch (COMException) { }
+            Application.Current.Exit();
+        }
     }
 
     private static async Task Run()
     {
         _shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
         SettingsManager.RestorePreviousWindows = false;
+        // Exercise the new single-source profile store without touching user settings.
+        var manager = new ProfileManager();
+        var profile = manager.Add();
+        profile.Name = "Autosave check";
+        profile.HotKeys = new[] { H.Hooks.Key.Ctrl, H.Hooks.Key.F12 };
+        manager.Save();
+        var reloaded = new ProfileManager();
+        if (!reloaded.Profiles.Any(item => item.Id == profile.Id && item.Name == profile.Name && item.HotKeys?.Length == 2))
+            throw new Exception("Shortcut edits were not persisted immediately.");
+        manager.Remove(profile);
+        if (new ProfileManager().Profiles.Any(item => item.Id == profile.Id))
+            throw new Exception("Shortcut removal was not persisted immediately.");
+        Console.WriteLine("PASS shortcut add/edit/remove autosave and stable IDs");
         SettingsManager.ClosedWindows = Array.Empty<ExplorerTabUtility.Models.WindowRecord>();
         var anchor = Path.Combine(Root, "anchor");
         var folder = Path.Combine(Root, "日本語 space # folder");
@@ -136,6 +146,7 @@ internal static class Program
         await Reveal("/select new tab", folder, new[] { "sample.txt" }, () => SelectCommand(Path.Combine(folder, "sample.txt")));
         await Reveal("/select reused tab, same basename", folder, new[] { "sample.md" }, () => SelectCommand(Path.Combine(folder, "sample.md")));
         await Reveal("Shell API multi-selection", folder, new[] { "sample.txt", "sample.md" }, () => SelectNative(folder, "sample.txt", "sample.md"));
+        if (_smoke) return;
         await Reveal("Shell API folder selection", folder, new[] { "subfolder" }, () => SelectNative(folder, "subfolder"));
 
         var apiFolder = Path.Combine(Root, "native reveal");
@@ -235,7 +246,9 @@ internal static class Program
                 if (completion.Task.IsCompleted && ExplorerTabUtility.Helpers.Helper.GetAllExplorerTabs(_target).Count() > before && WinApi.GetForegroundWindow() == _target && IsDefaultTabActive())
                 {
                     // Let already queued WinEvents arrive before asserting no source was created.
-                    await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                    var queued = new TaskCompletionSource<bool>();
+                    DispatcherQueue.GetForCurrentThread().TryEnqueue(DispatcherQueuePriority.Low, () => queued.TrySetResult(true));
+                    await queued.Task;
                     if (created.Count != 0) throw new Exception("Taskbar launch used a native source window instead of the direct route.");
                     Console.WriteLine(_expectedPinned == null
                         ? "PASS taskbar launch: active target gained the default folder tab, zero native source windows created."

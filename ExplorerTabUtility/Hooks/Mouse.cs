@@ -13,7 +13,7 @@ public sealed class Mouse : IHook
     private int _lastClickTime;
     private Key _lastClickKey;
     private readonly LowLevelMouseHook _lowLevelMouseHook;
-    private readonly IReadOnlyCollection<HotKeyProfile> _hotkeyProfiles;
+    private volatile IReadOnlyCollection<HotKeyProfile> _hotkeyProfiles;
     public bool IsHookActive => _lowLevelMouseHook.IsStarted;
     public event Action<HotKeyEventArgs>? OnHotKeyProfileTriggered;
 
@@ -24,6 +24,7 @@ public sealed class Mouse : IHook
         _lowLevelMouseHook.Down += LowLevelMouseHook_Down;
     }
 
+    public void SetProfiles(IReadOnlyCollection<HotKeyProfile> profiles) => _hotkeyProfiles = profiles;
     public void StartHook() => _lowLevelMouseHook.Start();
     public void StopHook() => _lowLevelMouseHook.Stop();
 

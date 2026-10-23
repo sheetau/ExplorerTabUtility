@@ -5,9 +5,6 @@ using ExplorerTabUtility.Interop;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Automation;
-using System.Windows.Threading;
 using H.Hooks;
 using ExplorerTabUtility.Helpers;
 using ExplorerTabUtility.WinAPI;
@@ -20,15 +17,15 @@ namespace ExplorerTabUtility.Hooks;
 /// </summary>
 internal sealed class TaskbarLaunchHook : IDisposable
 {
-    private sealed class LaunchItem(nint menu, Rect bounds, int generation, string? location = null)
+    private sealed class LaunchItem(nint menu, ScreenBounds bounds, int generation, string? location = null)
     {
         public nint Menu { get; } = menu;
-        public Rect Bounds { get; } = bounds;
+        public ScreenBounds Bounds { get; } = bounds;
         public int Generation { get; } = generation;
         public string? Location { get; } = location;
     }
 
-    private readonly Dispatcher _dispatcher;
+    private readonly UiDispatcher _dispatcher;
     private readonly Func<bool> _canLaunch;
     private readonly Func<string?, Task> _launch;
     private readonly LowLevelMouseHook _mouse = new() { Handling = true };
@@ -41,7 +38,7 @@ internal sealed class TaskbarLaunchHook : IDisposable
     private int _discovering;
     private bool _disposed;
 
-    public TaskbarLaunchHook(Dispatcher dispatcher, Func<bool> canLaunch, Func<string?, Task> launch)
+    public TaskbarLaunchHook(UiDispatcher dispatcher, Func<bool> canLaunch, Func<string?, Task> launch)
     {
         _dispatcher = dispatcher;
         _canLaunch = canLaunch;
@@ -103,18 +100,14 @@ internal sealed class TaskbarLaunchHook : IDisposable
         using var process = Process.GetProcessById((int)processId);
         if (!string.Equals(process.ProcessName, "ShellExperienceHost", StringComparison.OrdinalIgnoreCase)) return;
 
-        var root = AutomationElement.FromHandle(menu);
-        var list = root.FindFirst(TreeScope.Children,
-            new PropertyCondition(AutomationElement.AutomationIdProperty, "SystemItemList"));
-        if (list == null || list.Current.ControlType != ControlType.List) return;
-        var item = list.FindFirst(TreeScope.Children,
-            new PropertyCondition(AutomationElement.AutomationIdProperty, "Open"));
-        if (item == null) return;
-        var info = item.Current;
-        if (info.ControlType != ControlType.ListItem || !info.IsEnabled || info.IsOffscreen ||
-            (info.Name != "File Explorer" && info.Name != "エクスプローラー") ||
-            !item.TryGetCurrentPattern(InvokePattern.Pattern, out _)) return;
-        var bounds = info.BoundingRectangle;
+        using var automation = new NativeAutomation();
+        using var root = automation.FromHandle(menu);
+        using var list = root.ChildById("SystemItemList");
+        if (list == null || list.ControlType != 50008) return;
+        using var item = list.ChildById("Open");
+        if (item == null || item.ControlType != 50007 || !item.IsEnabled || item.IsOffscreen ||
+            (item.Name != "File Explorer" && item.Name != "エクスプローラー") || !item.CanInvoke) return;
+        var bounds = item.Bounds;
         if (bounds.IsEmpty || bounds.Width <= 0 || bounds.Height <= 0) return;
         if (!_started || generation != Volatile.Read(ref _generation) || WinApi.GetForegroundWindow() != menu) return;
         var candidates = new List<LaunchItem> { new(menu, bounds, generation) };
@@ -127,21 +120,16 @@ internal sealed class TaskbarLaunchHook : IDisposable
         using (var sta = new StaTaskScheduler())
             folders = await Task.Factory.StartNew(PinnedFolderReader.Read, CancellationToken.None, TaskCreationOptions.None, sta);
         if (!_started || generation != Volatile.Read(ref _generation) || WinApi.GetForegroundWindow() != menu) return;
-        var groups = root.FindAll(TreeScope.Descendants, new AndCondition(
-            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Group),
-            new PropertyCondition(AutomationElement.ClassNameProperty, "ListViewHeaderItem")));
-        foreach (AutomationElement group in groups)
+        foreach (var group in root.FindAll(4, 50026))
         {
-            if (group.Current.Name is not ("Pinned" or "ピン留め済み" or "ピン留め")) continue;
-            var rows = group.FindAll(TreeScope.Children,
-                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem));
-            foreach (AutomationElement row in rows)
+            using var groupOwner = group;
+            if (group.ClassName != "ListViewHeaderItem" || group.Name is not ("Pinned" or "ピン留め済み" or "ピン留め")) continue;
+            foreach (var row in group.FindAll(2, 50007))
             {
-                var rowInfo = row.Current;
-                if (!rowInfo.IsEnabled || rowInfo.IsOffscreen ||
-                    !folders.TryGetValue(rowInfo.Name, out var paths) || paths.Count != 1 ||
-                    !row.TryGetCurrentPattern(InvokePattern.Pattern, out _)) continue;
-                var hit = rowInfo.BoundingRectangle;
+                using var rowOwner = row;
+                if (!row.IsEnabled || row.IsOffscreen ||
+                    !folders.TryGetValue(row.Name, out var paths) || paths.Count != 1 || !row.CanInvoke) continue;
+                var hit = row.Bounds;
                 if (hit.IsEmpty || hit.Height <= 0 || hit.Width <= 2 * hit.Height) continue;
                 // The trailing area contains the pin/unpin affordance, which
                 // may only materialize on hover. Always leave it to Windows.

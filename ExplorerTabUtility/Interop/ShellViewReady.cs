@@ -12,7 +12,6 @@ namespace ExplorerTabUtility.Interop;
 /// request takes. DocumentComplete precedes Explorer's initial selection.
 /// Construct before starting navigation (or as soon as a window is registered).
 /// </summary>
-[Fody.ConfigureAwait(true)]
 internal sealed class ShellViewReady : IDisposable
 {
     private readonly InternetExplorer _window;

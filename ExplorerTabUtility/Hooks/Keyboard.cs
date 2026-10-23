@@ -10,7 +10,7 @@ namespace ExplorerTabUtility.Hooks;
 public sealed class Keyboard : IHook
 {
     private readonly LowLevelKeyboardHook _lowLevelKeyboardHook;
-    private readonly IReadOnlyCollection<HotKeyProfile> _hotkeyProfiles;
+    private volatile IReadOnlyCollection<HotKeyProfile> _hotkeyProfiles;
     public bool IsHookActive => _lowLevelKeyboardHook.IsStarted;
     public event Action<HotKeyEventArgs>? OnHotKeyProfileTriggered;
 
@@ -21,6 +21,7 @@ public sealed class Keyboard : IHook
         _lowLevelKeyboardHook.Down += LowLevelKeyboardHook_Down;
     }
 
+    public void SetProfiles(IReadOnlyCollection<HotKeyProfile> profiles) => _hotkeyProfiles = profiles;
     public void StartHook() => _lowLevelKeyboardHook.Start();
     public void StopHook() => _lowLevelKeyboardHook.Stop();
 

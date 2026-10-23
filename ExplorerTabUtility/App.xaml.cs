@@ -1,47 +1,48 @@
-using System.Windows;
+using System;
+using System.Linq;
 using System.Threading;
-using System.Windows.Controls;
-using ExplorerTabUtility.UI.Views;
+using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml;
 using ExplorerTabUtility.Helpers;
+using ExplorerTabUtility.Interop;
 
 namespace ExplorerTabUtility;
 
-// ReSharper disable once RedundantExtendsListEntry
 public partial class App : Application
 {
     private Mutex? _mutex;
-
-    protected override void OnStartup(StartupEventArgs e)
+    private AppController? _controller;
+    public App()
     {
-        _mutex = new Mutex(true, Constants.MutexId, out var createdNew);
-
-        if (createdNew)
+        var diagnosticPath = Environment.GetEnvironmentVariable("EXPLORER_TAB_UTILITY_DIAGNOSTICS");
+        if (!string.IsNullOrEmpty(diagnosticPath))
         {
-            base.OnStartup(e);
-            SetupTooltipBehavior();
-
-            _ = new MainWindow();
+            System.Diagnostics.Trace.Listeners.Add(new System.Diagnostics.TextWriterTraceListener(diagnosticPath));
+            System.Diagnostics.Trace.AutoFlush = true;
+        }
+        UnhandledException += (_, args) =>
+        {
+            System.Diagnostics.Trace.WriteLine(args.Message);
+            System.Diagnostics.Trace.WriteLine(args.Exception);
+        };
+        InitializeComponent();
+    }
+    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    {
+        _mutex = new Mutex(true, Constants.MutexId, out var firstInstance);
+        if (!firstInstance)
+        {
+            NativeTrayIcon.ShowExistingSettings();
+            _mutex.Dispose();
+            Exit();
             return;
         }
-
-        CustomMessageBox.Show("""
-                              Another instance is already running.
-                              Check in System Tray Icons.
-                              """, Constants.AppName, icon: MessageBoxImage.Information);
-        Shutdown();
-    }
-
-    protected override void OnExit(ExitEventArgs e)
-    {
-        _mutex?.Dispose();
-        base.OnExit(e);
-    }
-
-    private static void SetupTooltipBehavior()
-    {
-        ToolTipService.ShowDurationProperty.OverrideMetadata(typeof(FrameworkElement), new FrameworkPropertyMetadata(3500));
-        ToolTipService.InitialShowDelayProperty.OverrideMetadata(typeof(FrameworkElement), new FrameworkPropertyMetadata(1700));
-        ToolTipService.BetweenShowDelayProperty.OverrideMetadata(typeof(FrameworkElement), new FrameworkPropertyMetadata(150));
-        ToolTipService.ShowsToolTipOnKeyboardFocusProperty.OverrideMetadata(typeof(FrameworkElement), new FrameworkPropertyMetadata(false));
+        UiDispatcher.Initialize(DispatcherQueue.GetForCurrentThread());
+        _controller = new AppController(() => { _controller?.Dispose(); _mutex?.Dispose(); Exit(); });
+        if (Managers.SettingsManager.IsFirstRun || Environment.GetCommandLineArgs().Contains("--settings"))
+        {
+            Managers.SettingsManager.IsFirstRun = false;
+            _controller.ShowSettings();
+        }
     }
 }

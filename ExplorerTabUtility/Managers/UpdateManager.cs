@@ -1,73 +1,28 @@
 ﻿using System;
-using System.Diagnostics;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Reflection;
 using System.Text.Json;
-using System.Text.Json.Nodes;
-using System.Runtime.InteropServices;
-using AutoUpdaterDotNET;
-using AutoUpdaterDotNET.Markdown;
+using System.Threading.Tasks;
 using ExplorerTabUtility.Helpers;
 
 namespace ExplorerTabUtility.Managers;
 
-internal static class UpdateManager
+public static class UpdateManager
 {
-    static UpdateManager()
+    public static async Task<(bool Available, string Message, Uri? Link)> CheckAsync()
     {
-        AutoUpdater.FlattenRootFolder = true;
-        AutoUpdater.Icon = Helper.GetIcon()!.ToBitmap();
-        AutoUpdater.ChangelogViewerProvider = new MarkdownViewerProvider();
-
-        AutoUpdater.ParseUpdateInfoEvent += ParseUpdateInfo;
-    }
-
-    public static void CheckForUpdates() => AutoUpdater.Start(Constants.UpdateUrl);
-
-    private static void ParseUpdateInfo(ParseUpdateInfoEventArgs p)
-    {
-        try
-        {
-            var jsonNode = JsonSerializer.Deserialize<JsonNode>(p.RemoteData);
-            if (jsonNode == null) return;
-
-            p.UpdateInfo = new UpdateInfoEventArgs
-            {
-                CurrentVersion = jsonNode["tag_name"]!.GetValue<string>().TrimStart('v'),
-                ChangelogText = jsonNode["body"]!.GetValue<string>(),
-                ChangelogURL = jsonNode["html_url"]!.GetValue<string>(),
-                DownloadURL = FindMatchingUpdateAssetUrl(jsonNode)
-            };
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Update check failed: {ex.Message}");
-        }
-    }
-
-    private static string? FindMatchingUpdateAssetUrl(JsonNode jsonNode)
-    {
-        var currentRuntime = Environment.Version.Major > 5 ? $"Net{Environment.Version.Major}" : "NetFW";
-        var currentArch = RuntimeInformation.ProcessArchitecture switch
-        {
-            Architecture.X86 => "x86",
-            Architecture.Arm64 => "arm64",
-            _ => "x64"
-        };
-
-        var assets = jsonNode["assets"]!.AsArray();
-        foreach (var asset in assets)
-        {
-            var assetName = asset!["name"]!.GetValue<string>();
-            var split = assetName.Split('_');
-            if (split.Length < 4)
-                continue;
-
-            var arch = split[2].Split('.')[0];
-            var runtime = split[3].Replace(".zip", "");
-
-            if (runtime.StartsWith(currentRuntime) && arch == currentArch)
-                return asset["browser_download_url"]!.GetValue<string>();
-        }
-
-        return null;
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("ExplorerTabUtility", "3.0.0"));
+        using var response = await client.GetAsync(Constants.UpdateUrl).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound) return (false, "No release has been published yet.", null);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+        var tag = json.RootElement.GetProperty("tag_name").GetString() ?? "";
+        var current = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(3, 0);
+        var available = Version.TryParse(tag.TrimStart('v').Split('-')[0], out var latest) && latest > current;
+        var url = json.RootElement.GetProperty("html_url").GetString();
+        return (available, available ? $"Version {tag} is available." : "You are up to date.", available && Uri.TryCreate(url, UriKind.Absolute, out var link) && link.Host == "github.com" ? link : null);
     }
 }

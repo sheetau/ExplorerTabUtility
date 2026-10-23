@@ -7,11 +7,11 @@ using ExplorerTabUtility.Helpers;
 using ExplorerTabUtility.Models;
 using ExplorerTabUtility.Hooks;
 using ExplorerTabUtility.WinAPI;
-using ExplorerTabUtility.UI.Views;
+using ExplorerTabUtility.UI;
 
 namespace ExplorerTabUtility.Managers;
 
-public sealed class HookManager
+public sealed class HookManager : IDisposable
 {
     private readonly Mouse _mouseHook;
     private readonly Keyboard _keyboardHook;
@@ -20,11 +20,15 @@ public sealed class HookManager
     public event Action? OnVisibilityToggled;
     public event Action? OnWindowHookToggled;
     public event Action? OnReuseTabsToggled;
-    public event Action? OnShellInitialized;
+    private bool _recording;
+    private bool _disposed;
+    private readonly ProfileManager _profiles;
+    private TabSearchWindow? _search;
 
     public HookManager(ProfileManager profileManager)
     {
         _syncContext = SynchronizationContext.Current!;
+        _profiles = profileManager;
 
         _windowHook = new ExplorerWatcher();
         _mouseHook = new Mouse(profileManager.GetProfiles());
@@ -34,16 +38,38 @@ public sealed class HookManager
         profileManager.KeybindingsHookStopped += KeybindingStopped;
         _keyboardHook.OnHotKeyProfileTriggered += OnHotKeyProfileTriggered;
         _mouseHook.OnHotKeyProfileTriggered += OnHotKeyProfileTriggered;
-        _windowHook.OnShellInitialized += () => OnShellInitialized?.Invoke();
-        System.Windows.Application.Current.SessionEnding += (_, _) => Dispose();
+        profileManager.Changed += ProfilesChanged;
+        ApplySettings();
+    }
+
+    private void ProfilesChanged()
+    {
+        var profiles = _profiles.GetProfiles();
+        _keyboardHook.SetProfiles(profiles);
+        _mouseHook.SetProfiles(profiles);
+    }
+    public void ApplySettings()
+    {
+        ChangeHookStatus(_windowHook, SettingsManager.IsWindowHookActive);
+        SetReuseTabs(SettingsManager.ReuseTabs);
+        if (!_recording)
+        {
+            ChangeHookStatus(_keyboardHook, SettingsManager.IsKeyboardHookActive);
+            ChangeHookStatus(_mouseHook, SettingsManager.IsMouseHookActive);
+        }
+    }
+    private void ShowSearch()
+    {
+        if (_search != null) { _search.Activate(); return; }
+        _search = new TabSearchWindow(_windowHook);
+        _search.Closed += (_, _) => _search = null;
+        _search.Activate();
     }
 
     public void StartMouseHook() => ChangeHookStatus(_mouseHook, true);
     public void StopMouseHook() => ChangeHookStatus(_mouseHook, false);
     public void StartKeyboardHook() => ChangeHookStatus(_keyboardHook, true);
     public void StopKeyboardHook() => ChangeHookStatus(_keyboardHook, false);
-    public void StartWindowHook() => ChangeHookStatus(_windowHook, true);
-    public void StopWindowHook() => ChangeHookStatus(_windowHook, false);
     public void SetReuseTabs(bool value) => _windowHook.SetReuseTabs(value);
 
     private async void OnHotKeyProfileTriggered(HotKeyEventArgs e)
@@ -95,7 +121,7 @@ public sealed class HookManager
                 break;
 
             case HotKeyAction.TabSearch:
-                _syncContext.Post(_ => new TabSearchPopup(_windowHook).Show(), null);
+                _syncContext.Post(_ => ShowSearch(), null);
                 break;
 
             case HotKeyAction.SnapRight:
@@ -114,11 +140,13 @@ public sealed class HookManager
     }
     private void KeybindingStarted()
     {
+        _recording = true;
         StopMouseHook();
         StopKeyboardHook();
     }
     private void KeybindingStopped()
     {
+        _recording = false;
         if (SettingsManager.IsMouseHookActive) StartMouseHook();
         if (SettingsManager.IsKeyboardHookActive) StartKeyboardHook();
     }
@@ -199,6 +227,12 @@ public sealed class HookManager
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
+        _profiles.Changed -= ProfilesChanged;
+        _profiles.KeybindingsHookStarted -= KeybindingStarted;
+        _profiles.KeybindingsHookStopped -= KeybindingStopped;
+        _search?.Close();
         _keyboardHook.Dispose();
         _mouseHook.Dispose();
         _windowHook.Dispose();

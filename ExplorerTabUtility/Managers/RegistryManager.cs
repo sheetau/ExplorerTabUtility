@@ -27,7 +27,7 @@ public static class RegistryManager
         // Check if the application exists in the Run registry key and has the correct executable location
         using var key = OpenCurrentUserKey(RunKeyPath, false);
         var value = key?.GetValue(Constants.AppName) as string;
-        return string.Equals(value, ExecutablePath, StringComparison.OrdinalIgnoreCase);
+        return string.Equals(value?.Trim('"'), ExecutablePath, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsStartupApprovedEnabled()
@@ -44,7 +44,7 @@ public static class RegistryManager
 
         // Add to Run registry key
         using var runKey = OpenCurrentUserKey(RunKeyPath, true);
-        runKey?.SetValue(Constants.AppName, ExecutablePath);
+        runKey?.SetValue(Constants.AppName, $"\"{ExecutablePath}\"");
 
         // Create enabled entry in StartupApproved
         var enabledData = new byte[12];

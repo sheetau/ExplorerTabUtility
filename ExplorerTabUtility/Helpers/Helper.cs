@@ -3,9 +3,7 @@ using System.Linq;
 using System.Drawing;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Reflection;
 using System.Diagnostics;
-using System.ComponentModel;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
@@ -208,12 +206,6 @@ public static class Helper
         return val;
     }
 
-    public static Icon? GetIcon() => Icon.ExtractAssociatedIcon(GetExecutablePath());
-    public static string GetEnumDescription(Enum value)
-    {
-        var fieldInfo = value.GetType().GetField(value.ToString());
-        return fieldInfo?.GetCustomAttribute<DescriptionAttribute>()?.Description ?? value.ToString();
-    }
     public static string HotKeysToString(this IEnumerable<Key> keys, bool isDoubleClick = false)
     {
         var text = string.Join(" + ", keys.Select(k => k.ToDisplayString()));
@@ -483,49 +475,4 @@ public static class Helper
         return processName is { Length: > 0 } ? processName : $"{AppDomain.CurrentDomain.FriendlyName}.exe";
     }
 
-    public static async Task<List<SupporterInfo>> GetSupporters()
-    {
-        try
-        {
-            using var client = new System.Net.Http.HttpClient();
-            var svgContent = await client.GetStringAsync("https://cdn.jsdelivr.net/gh/w4po/sponsors/sponsors.svg");
-
-            var supporters = new List<SupporterInfo>();
-            var xmlDoc = new System.Xml.XmlDocument();
-            xmlDoc.LoadXml(svgContent);
-
-            // Find all <a> elements (supporters)
-            var linkNodes = xmlDoc.GetElementsByTagName("a");
-
-            foreach (System.Xml.XmlNode linkNode in linkNodes)
-            {
-                if (linkNode is not System.Xml.XmlElement linkElement)
-                    continue;
-
-                var href = linkElement.GetAttribute("href");
-                var id = linkElement.GetAttribute("id");
-
-                // Find the image element inside the link
-                var imageElements = linkElement.GetElementsByTagName("image");
-                if (imageElements.Count <= 0 || imageElements[0] is not System.Xml.XmlElement imageElement)
-                    continue;
-
-                var imageUrl = imageElement.GetAttribute("href");
-
-                supporters.Add(new SupporterInfo
-                {
-                    Name = string.IsNullOrWhiteSpace(id) ? "Unknown" : id,
-                    ProfileUrl = string.IsNullOrEmpty(href) ? string.Empty : href,
-                    ImageUrl = string.IsNullOrEmpty(imageUrl) ? string.Empty : imageUrl
-                });
-            }
-
-            return supporters;
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Error parsing SVG: {ex.Message}");
-            return [];
-        }
-    }
 }

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Text.Json.Serialization;
 using System.Linq;
 using H.Hooks;
 
@@ -6,6 +7,7 @@ namespace ExplorerTabUtility.Models;
 
 public class HotKeyProfile
 {
+    [JsonInclude]
     public Guid Id { get; private set; } = Guid.NewGuid();
     public string? Name { get; set; }
     public Key[]? HotKeys { get; set; }
