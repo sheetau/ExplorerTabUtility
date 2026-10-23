@@ -1,439 +1,59 @@
-# Explorer Tab Utility
+# ExplorerTabUtility
 
-> [!TIP]
-> Force new File Explorer windows to open as tabs in Windows 11, making your workflow cleaner and more organized!
+This is sheetau's independently maintained version of [w4po/ExplorerTabUtility](https://github.com/w4po/ExplorerTabUtility), based on v2.5.0 (`fad736353210d36595c6e6caa77ac7ad9129b3ee`). It keeps Explorer's windows as tabs while preserving the file selection from **Show in folder / Reveal in Explorer** requests.
 
-<div align="center">
-  <img src="https://cdn.jsdelivr.net/gh/w4po/ExplorerTabUtility@master/Assets/ExplorerTabUtilityLogo.gif" alt="Explorer Tab Utility Logo">
-  
-  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-  [![Windows 11](https://img.shields.io/badge/Windows%2011-22H2+-blue.svg)](https://www.microsoft.com/windows/windows-11)
-  [![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)](https://dotnet.microsoft.com/download)
-  [![.NET Framework](https://img.shields.io/badge/.NET%20Framework-4.8.1-purple.svg)](https://dotnet.microsoft.com/download/dotnet-framework)
-</div>
+## What changed in 2.5.1
 
-> [!IMPORTANT]
-> This application requires Windows 11 (22H2 Build 22621 or later) with the File Explorer Tabs feature.
+- Keep the source Explorer alive until its initial folder enumeration completes. Capture full item paths, including hidden extensions, then restore the selection and keyboard focus, and bring the selected file into view in the destination tab.
+- Prepare the destination while the source loads. Selection capture and restoration are driven by Shell `EnumDone` events, without a fixed capture delay or selection retry loop.
+- Apply incoming selections when reusing a tab. Observe selection changes in inactive tabs to handle `SHOpenFolderAndSelectItems` requests that create no new window.
+- Reuse newly completed tabs immediately. Keep location records current even when session restoration is disabled.
+- Keep Shell COM objects on one message-pumping STA, run continuations outside COM event callbacks, and detach event sinks on success, cancellation, timeout, and shutdown.
+- Preserve and reveal the original native window if conversion fails. The ten-second deadline is a failure boundary; successful opens finish on events.
 
-## 🤔 Why Explorer Tab Utility?
+## Run
 
-<div align="center">
-  <img src="https://cdn.jsdelivr.net/gh/w4po/ExplorerTabUtility@master/Assets/TheWhy.png" alt="Why use Explorer Tab Utility">
-</div>
+Windows 11 with native File Explorer tabs is required. Extract a build archive and run `ExplorerTabUtility.exe`. Stop any other version first; settings and the single-instance mutex remain compatible with upstream.
 
-Say goodbye to cluttered desktops with multiple Explorer windows! Explorer Tab Utility automatically converts new windows into tabs, providing a cleaner and more organized file management experience.
+Enable **Window Hook** to convert new Explorer windows into tabs. Enable **Reuse Tabs** to switch to an existing folder tab and apply incoming file selections. The original keyboard/mouse profiles, duplicate/reopen/detach actions, tab search, and session settings are retained. Ctrl+Shift bypasses conversion as in upstream.
 
-## ✨ Features
+Downloads for this version belong to [this repository's Releases](https://github.com/sheetau/ExplorerTabUtility/releases). Upstream's WinGet/Chocolatey packages install the upstream version. This repository's update checker uses its own releases.
 
-<details>
-<summary>🔄 Automatic Window to Tab Conversion</summary>
+- `NetFW4.8.1`: requires .NET Framework 4.8.1 (available on current Windows 11).
+- `Net9.0_FrameworkDependent`: requires the .NET 9 Windows Desktop runtime.
 
-- Seamlessly converts new Explorer windows into tabs
-- Switches to existing tabs if path is already opened
-- Supports virtual desktop switching with a hotkey
-- Supports attaching/detaching tabs
-- Handles "Show in folder" file selection elegantly
-- Handles opening multiple tabs at once
+## Build
 
-**See it in action:**
-![Window to tab conversion](https://cdn.jsdelivr.net/gh/w4po/ExplorerTabUtility@master/Assets/WindowToTab.gif)
-</details>
+Install Visual Studio with the **.NET desktop development** workload, the .NET 9 SDK, and the .NET Framework 4.8.1 targeting pack. Use a Visual Studio Developer PowerShell:
 
-<details>
-<summary>🖨️ Duplicate Current Tab</summary>
-
-- Quickly duplicate the current tab/window
-- Choose whether to duplicate as a tab or new window (toggle `Tab` option)
-- Preserves the current location and selected items
-
-**See it in action:**
-![Duplicate current tab](https://cdn.jsdelivr.net/gh/w4po/ExplorerTabUtility@master/Assets/DuplicateTab.gif)
-</details>
-
-<details>
-<summary>♻️ Reopen Closed Tabs</summary>
-
-- Reopen previously closed tabs/windows
-- Choose whether to reopen as a tab or new window (toggle `Tab` option)
-- Restores the exact location and selected items
-- History is saved across application restarts (enable "Save closed history" in settings)
-
-**See it in action:**
-![Reopen closed tabs](https://cdn.jsdelivr.net/gh/w4po/ExplorerTabUtility@master/Assets/ReopenClosedTab.gif)
-</details>
-
-<details>
-<summary>🔄 Restore Previous Windows</summary>
-
-- Automatically restore previously opened windows if File-Explorer restart/crash or system reboot
-- Configurable via "Restore previous windows" setting
-- Confirmation dialog allows you to choose whether to restore windows on first launch
-
-![Restore Previous Windows](https://cdn.jsdelivr.net/gh/w4po/ExplorerTabUtility@master/Assets/RestorePrevious.png)
-</details>
-
-<details>
-<summary>📋 Detach & Snap Windows</summary>
-
-- Detach current tab to a new window
-- Snap windows to screen edges (right/left/top/bottom)
-- Chain multiple actions with a single hotkey
-- Example setup (CTRL + Q):
-  1. First profile: Detach current tab
-  2. Second profile: Snap original window to the left
-  3. Third profile: Snap new window to the right (with customizable delay)
-- Customize delays to match your system's performance
-
-**See it in action:**
-![Detach & Snap](https://cdn.jsdelivr.net/gh/w4po/ExplorerTabUtility@master/Assets/DetachSnap.gif)
-</details>
-
-<details>
-<summary>⬅️ Navigate Back & Forward</summary>
-
-- Navigate back/forward/up in File Explorer using:
-  - Keyboard shortcuts (customizable)
-  - Mouse clicks on any empty space in the folder
-- Perfect for quick navigation between directories
-
-**See it in action:**
-![Navigate back/up](https://cdn.jsdelivr.net/gh/w4po/ExplorerTabUtility@master/Assets/NavigateBack.gif)
-</details>
-
-<details>
-<summary>📁 Custom Path Navigation</summary>
-
-- Assign hotkeys to quickly open your favorite locations
-- Choose whether to open as a tab or new window (toggle `Tab` option)
-- Supports multiple formats:
-  - Standard paths: `C:\Users\Documents`
-  - Environment variables: `%USERPROFILE%\Downloads`
-  - Windows CLSID paths: `{A8CDFF1C-4878-43be-B5FD-F8091C1C60D0}` (Special Folders)
-  - Programs and files: `C:\file.txt`
-  - URLs: `https://github.com/w4po/ExplorerTabUtility` (opens in default browser)
-- Perfect for frequently accessed locations
-- Instant access to system folders using CLSIDs
-
-**See it in action:**
-![Custom location](https://cdn.jsdelivr.net/gh/w4po/ExplorerTabUtility@master/Assets/CustomLocation.gif)
-</details>
-
-<details>
-<summary>🔍 Tab Search/Switcher</summary>
-
-- Quickly find and switch between open Explorer tabs/windows
-- Search by typing part of a folder name or path
-- Keyboard navigation with up/down arrows and Enter to select
-- Special modifiers for different actions:
-  - Default: Switch to existing tab or open location in a new tab
-  - SHIFT key: Open selected location in a new window instead of a tab
-  - CTRL key: Duplicate the tab even if it already exists
-- Clear recently closed windows history with a single click
-
-![Tab Search](https://cdn.jsdelivr.net/gh/w4po/ExplorerTabUtility@master/Assets/TabSearch.gif)
-</details>
-
-<details>
-<summary>🪟 Force New Window with Ctrl+Shift</summary>
-
-- Hold Ctrl+Shift while opening a location to force it to open as a new window
-- Temporarily overrides the window hook and tab reuse settings
-- Perfect for when you need a separate window without disabling the tab functionality
-</details>
-
-<details>
-<summary>⚡ Performance & Reliability</summary>
-
-- Lightweight and resource-efficient
-- Fast and responsive tab creation
-- Stable COM-based implementation
-- Reliable window state management
-</details>
-
-## 🚀 Getting Started
-
-1. Download the latest version from the [Releases](https://github.com/w4po/ExplorerTabUtility/releases) page or install it via `winget` or `choco`:
-    ```powershell
-    winget install w4po.ExplorerTabUtility --interactive
-    ```
-    ```powershell
-    choco install explorertabutility --version 2.5.0 --params "/interactive"
-    ```
-2. Run the application
-3. Look for the tray icon and you're ready to go!
-
-    ![Menu](https://cdn.jsdelivr.net/gh/w4po/ExplorerTabUtility@master/Assets/Menu.png)
-
-## ⚙️ Configuration
-
-> [!NOTE]
-> The application runs in the system tray minimized by default.
-> To configure it, double-click or right-click the tray icon.
-
-<details>
-<summary>🔧 General Settings</summary>
-
-- **Window Hook**: Enable/disable automatic window-to-tab conversion
-- **Reuse Tabs**: Switch to existing tabs instead of opening duplicates
-- **Keyboard Hook**: Enable/disable keyboard shortcuts
-- **Mouse Hook**: Enable/disable mouse navigation features
-- **Startup**: Configure automatic startup with Windows
-- **Settings Persistence**:
-  * Your settings are stored in a JSON file located in your AppData folder:
-  ```
-  %APPDATA%\ExplorerTabUtility\settings.json
-  ```
-  If you need to reset to default settings, simply delete the settings.json file.
-</details>
-
-<details>
-<summary>⚙️ Preferences</summary>
-
-- **Auto update**: Automatically check for updates on startup to ensure you're always using the latest version
-- **I have theme issues**: Use an alternative window hiding method that preserves your custom File Explorer theme. Enable this if you experience theme-related issues
-- **Save closed history**: Save recently closed windows for reopening later (ReopenClosed, Tab Search)
-- **Restore previous windows**: Restore previously opened windows after restart or crash
-- **Hide tray icon**: Hide the system tray icon for a cleaner taskbar experience.
-  * You must first configure a hotkey with the `ToggleVisibility` action before enabling this option
-
-![Preferences](https://cdn.jsdelivr.net/gh/w4po/ExplorerTabUtility@master/Assets/Preferences.png)
-</details>
-
-<details>
-<summary>⌨️ Hotkey Profile Management</summary>
-
-### Profile Options
-- Create new profiles
-- Import profiles from file
-- Export profiles to file
-- Enable/disable individual profiles
-
-### Profile Settings
-Each profile contains the following settings:
-
-1. **Basic Configuration**
-   - Hotkey: Set keyboard shortcut (supports modifier keys)
-   - Scope: Global (system-wide) or Explorer (only in File Explorer)
-   - Action Type:
-     - `Open`: Open a specific location
-     - `Duplicate`: Duplicate the current tab
-     - `ReopenClosed`: Reopen the last closed location
-     - `TabSearch`: Open the tab search/switcher popup
-     - `NavigateBack`: Navigate back in the current tab
-     - `NavigateForward`: Navigate forward in the current tab
-     - `NavigateUp`: Navigate up one directory level
-     - `SetTargetWindow`: Mark the current window as the target for new tabs
-     - `ToggleWinHook`: Toggle the window hook on/off
-     - `ToggleReuseTabs`: Toggle tab reuse on/off
-     - `ToggleVisibility`: Show/hide the main window
-     - `DetachTab`: Detach the current tab to a new window
-     - `Snap`: Snap the current window to the screen edges (right/left/top/bottom)
-   - Path Field (for `Open` action)
-     - Optional: Leave empty to open new tab
-     - Supports multiple path formats (see Custom Path Navigation section)
-
-2. **Advanced Settings**
-   - Execution Delay: Slider to set delay before action execution
-   - Key Handling: Toggle whether hotkeys are passed to other applications
-   - Profile Deletion: Remove unwanted profiles
-
-![Form](https://cdn.jsdelivr.net/gh/w4po/ExplorerTabUtility@master/Assets/Form.png)
-
-> [!TIP]
-> Use the "Handled" toggle to prevent or allow hotkey propagation to other applications that might be listening for the same key combination.
-
-> [!NOTE]
-> The `SetTargetWindow` action lets you choose which Explorer window will receive new tabs. This is useful when you have multiple Explorer windows open or working on different virtual desktops and want to control where new tabs appear.
-</details>
-
-## 🔧 Technical Details
-
-<details>
-<summary>Implementation Overview</summary>
-
-### Core Components
-
-#### 1. 🔌 COM Integration
-- Direct interaction with Windows Shell through native COM interfaces:
-  - `Shell32`: Core shell functionality and file system operations
-  - `SHDocVw`: Explorer window and tab management
-  - Custom COM interface implementations for reliable shell interactions
-- Efficient PIDL (Pointer to ID List) handling for file system operations
-- Thread-safe COM object lifecycle management
-
-#### 2. 🪟 Window Management
-- Advanced window tracking and state management:
-  - Concurrent collections for thread-safe window tracking
-  - Efficient tab handle caching and validation
-  - Smart window-to-tab conversion logic
-- Support for special folder navigation (CLSID paths)
-
-#### 3. ⚡ Process & Event System
-- Robust Explorer process monitoring:
-  - Automatic recovery from Explorer crashes
-  - Event-driven architecture for responsive UI
-  - Efficient window event hooking
-- Asynchronous operation handling:
-  - STA (Single-threaded Apartment) task scheduler
-  - Non-blocking COM operations
-  - Proper synchronization with SemaphoreSlim
-
-#### 4. 🚀 Performance Optimizations
-- Smart caching mechanisms:
-  - Window handle caching
-  - Path comparison optimization
-  - Tab state tracking
-- Efficient resource management:
-  - Proper COM object disposal
-  - Memory-efficient collections
-  - Minimal window recreation
-
-#### 5. 🎨 Modern UI
-- Modern WPF-based user interface:
-  - XAML-based UI components for better flexibility and design
-  - Custom themes and styles in dedicated XAML files
-  - Improved visual consistency with Windows 11 design language
-- Enhanced system tray integration:
-  - Modern WPF-based TaskbarIcon implementation
-  - XAML-based context menu with Windows 11 iconography
-  - Custom icons and hover effects for better visual feedback
-- Tab Search popup with modern styling and keyboard navigation
-- About page with developer information and support options
-
-### Key Technologies
-- .NET 9 and .NET Framework 4.8.1
-- Windows COM APIs
-  - Shell32 and SHDocVw interfaces
-  - Native P/Invoke
-- Advanced threading with STA scheduler
-- Concurrent collections for thread safety
-- WPF (Windows Presentation Foundation) for modern UI
-</details>
-
-## 🗑️ Uninstallation
-
-The utility can be uninstalled in several ways depending on how you installed it:
-
-- **If you installed using the installer**: Use the standard Windows uninstaller
-  - Go to "Settings > Apps > Installed apps"
-  - Find "Explorer Tab Utility" and click "Uninstall"
-  - Or use Control Panel > Programs and Features
-  - Or run the uninstaller directly from the installation directory
-
-- **If you installed via winget**:
-  ```powershell
-  winget uninstall w4po.ExplorerTabUtility
-  ```
-
-- **If you installed via Chocolatey**:
-  ```powershell
-  choco uninstall explorertabutility
-  ```
-
-- **If you used the portable version**: Simply delete the application folder
-  - If you enabled the `Add to startup` option, make sure to disable it first before deletion
-
-## Antivirus Detection
-
-> [!WARNING]
-> The utility might be flagged by antivirus software as suspicious. This is a **false positive** caused by our use of:
-> - COM interactions (for File Explorer tab management)
-> - Low-level keyboard & mouse hooks (for hotkey support)
->
-> The tool is completely open source, and you can:
-> - Review the source code in this repository
-> - Build it yourself using Visual Studio
-> - Verify its safety and functionality
-
-### Adding to Windows Defender Exclusions
-
-If Windows Defender is blocking the utility, you can add it to the exclusions list:
-
-1. Open Windows Security
-2. Go to `Virus & threat protection`
-3. Click `Manage settings` under `Virus & threat protection settings`
-4. Scroll down to `Exclusions` and click `Add or remove exclusions`
-5. Click `Add an exclusion` and select `Folder`
-6. Browse to the Explorer Tab Utility folder location
-
-Alternatively, you can use PowerShell (Run as Administrator):
 ```powershell
-Add-MpPreference -ExclusionPath "PATH_TO_UTILITY_FOLDER"
+msbuild ExplorerTabUtility.sln /restore /p:Configuration=Release
 ```
 
-## ℹ️ Notes
+Use full-framework `MSBuild.exe`: the Shell COM references require `ResolveComReference`, which `dotnet build` does not support. Both `net9.0-windows` and `net481` are built by the solution. Executables are in `ExplorerTabUtility/bin/Release/<framework>/`.
 
-> [!NOTE]
-> While this utility is optimized for best performance, some operations might experience delays due to limitations in Windows File Explorer itself:
-> - The File Explorer's tab interface lacks proper APIs for programmatic control
-> - Some operations in File Explorer are inherently laggy, especially with multiple simultaneous window operations
-> - Windows Shell doesn't expose all the necessary functionality for seamless tab management
+For a portable x64 Framework archive:
 
-Despite these Windows limitations, the utility implements the best possible solutions using available Windows APIs and COM interfaces.
+```powershell
+msbuild ExplorerTabUtility/ExplorerTabUtility.csproj /restore /t:Publish /p:Configuration=Release /p:TargetFramework=net481 /p:RuntimeIdentifier=win-x64 /p:PublishDir=../publish/net481/x64/
+```
 
-## 💝 Support the Project
+GitHub Actions builds both frameworks and all three architectures, and uploads unsigned ZIP artifacts. Tags beginning with `v` also publish the ZIPs as a GitHub release. No upstream signing or package-publishing credentials are required.
 
-If you find Explorer Tab Utility helpful, consider supporting its development:
+## Real Explorer acceptance tests
 
-<p align="center">
-  <a href="https://github.com/sponsors/w4po">
-    <img src="https://img.shields.io/badge/sponsor-30363D?style=for-the-badge&logo=GitHub-Sponsors&logoColor=#white" alt="GitHub Sponsors"/>
-  </a>
-  <a href="https://www.patreon.com/w4po">
-    <img src="https://img.shields.io/badge/Patreon-F96854?style=for-the-badge&logo=patreon&logoColor=white" alt="Patreon"/>
-  </a>
-  <a href="https://www.buymeacoffee.com/w4po">
-    <img src="https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee"/>
-  </a>
-  <a href="https://paypal.me/w4po77">
-    <img src="https://img.shields.io/badge/PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white" alt="PayPal"/>
-  </a>
-</p>
+Run these explicitly on an interactive Windows 11 desktop, with other ExplorerTabUtility processes stopped. The harness opens temporary fixture folders, uses a dedicated Explorer window, reads back selected paths and the active native tab, and closes its fixture windows. It backs up and restores the settings file. It does not run automatically on CI because these tests require a desktop session.
 
-Your support helps maintain and improve the project! ❤️
+```powershell
+msbuild tests/ExplorerTabUtility.IntegrationTests/ExplorerTabUtility.IntegrationTests.csproj /restore /p:Configuration=Release
+dotnet tests/ExplorerTabUtility.IntegrationTests/bin/Release/net9.0-windows/ExplorerTabUtility.IntegrationTests.dll
+& tests/ExplorerTabUtility.IntegrationTests/bin/Release/net481/ExplorerTabUtility.IntegrationTests.exe
+```
 
-### Sponsors & Supporters
+Coverage: new and reused `/select` requests; same basenames with different extensions; Shell API single and multiple selection; subfolder selection; Japanese, spaces and `#` in paths; ordinary empty folders; inactive-tab activation including repeated identical selection; immediate reuse; reuse disabled; and cancellation during conversion. See [VALIDATION.md](VALIDATION.md) for the recorded results.
 
-Thank you to all the amazing people who support this project!
+Explorer still performs its native navigation; this utility does not replace Shell registrations or install a registry interceptor. Network folders, third-party namespace extensions, and modified Explorer implementations can behave differently. A view that does not provide the required enumeration event is left as its native window instead of losing the reveal request.
 
-<p align="center">
-  <a href="https://github.com/sponsors/w4po">
-    <img src="https://cdn.jsdelivr.net/gh/w4po/sponsors/sponsors.svg" alt="Sponsors" />
-  </a>
-</p>
+## Attribution
 
-## Contributing
-
-Contributions are welcome! Feel free to submit issues and pull requests.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgements
-
-This project makes use of the following excellent open-source packages:
-
-<p align="center">
-  <a href="https://github.com/HavenDV/H.Hooks">
-    <img src="https://img.shields.io/badge/H.Hooks-Keyboard%20Hook-purple?style=for-the-badge" alt="H.Hooks"/>
-  </a>
-  <a href="https://github.com/hardcodet/wpf-notifyicon">
-    <img src="https://img.shields.io/badge/Hardcodet.NotifyIcon.Wpf-System%20Tray-blue?style=for-the-badge" alt="Hardcodet NotifyIcon"/>
-  </a>
-</p>
-
-- **[H.Hooks](https://github.com/HavenDV/H.Hooks)** - Efficient and reliable keyboard hook implementation
-- **[Hardcodet.NotifyIcon.Wpf](https://github.com/hardcodet/wpf-notifyicon)** - Modern WPF-based system tray icon implementation
-
-Special thanks to the maintainers of these packages for their excellent work!
-
-## Code Signing
-<table>
- <tbody>
-  <tr>
-   <td align="center"><img alt="[SignPath]" src="https://avatars.githubusercontent.com/u/34448643" height="30"/></td>
-   <td>Free code signing provided by <a href="https://signpath.io?utm_source=foundation&utm_medium=github&utm_campaign=ExplorerTabUtility">SignPath.io</a>, certificate by <a href="https://signpath.org?utm_source=foundation&utm_medium=github&utm_campaign=ExplorerTabUtility">SignPath Foundation</a></td>
-  </tr>
- </tbody>
-</table>
+The original application, UI, assets, and features are by w4po and upstream contributors, under the [MIT license](LICENSE). The source snapshot was imported without upstream Git history into this independent repository. Selection handling was informed by upstream issues [#71](https://github.com/w4po/ExplorerTabUtility/issues/71), [#105](https://github.com/w4po/ExplorerTabUtility/issues/105), [#106](https://github.com/w4po/ExplorerTabUtility/issues/106), [#126](https://github.com/w4po/ExplorerTabUtility/issues/126), [#128](https://github.com/w4po/ExplorerTabUtility/issues/128), and [PR #144](https://github.com/w4po/ExplorerTabUtility/pull/144). This implementation uses Shell events in place of that PR's capture polling.

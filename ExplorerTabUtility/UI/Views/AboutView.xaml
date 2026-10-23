@@ -468,7 +468,7 @@
 
                     <!-- Left Column: Support Options -->
                     <StackPanel Grid.Column="0">
-                        <TextBlock Text="Support the Project"
+                        <TextBlock Text="Support the Original Developer"
                                    Style="{StaticResource SectionTitleStyle}" />
 
                         <TextBlock Text="If you find this utility helpful, consider supporting its development through one of these options:"

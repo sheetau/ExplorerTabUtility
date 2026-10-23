@@ -1,11 +1,14 @@
 ﻿using SHDocVw;
-using System.Diagnostics;
 
 namespace ExplorerTabUtility.Models;
 
 public class WindowInfo
 {
-    public long CreatedAt { get; } = Stopwatch.GetTimestamp();
+    internal ExplorerTabUtility.Interop.ShellViewReady? InitialViewReady { get; set; }
+    internal Shell32.DShellFolderViewEvents_Event? SelectionView { get; set; }
+    internal Shell32.DShellFolderViewEvents_SelectionChangedEventHandler? OnSelectionChanged { get; set; }
+    internal bool SelectionActivationPending { get; set; }
+    public bool IsConversionSource { get; set; }
     public string? Location { get; set; }
     public string? Name { get; set; }
     public DWebBrowserEvents2_OnQuitEventHandler? OnQuitHandler { get; set; }

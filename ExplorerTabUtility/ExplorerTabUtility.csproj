@@ -6,15 +6,15 @@
         <Nullable>enable</Nullable>
         <UseWPF>True</UseWPF>
         <ApplicationIcon>Icon.ico</ApplicationIcon>
-        <Version>2.5.0</Version>
+        <Version>2.5.1</Version>
         <LangVersion>latest</LangVersion>
         <Title>Explorer Tab Utility</Title>
-        <Authors>w4po</Authors>
+        <Authors>w4po;sheetau</Authors>
         <Company>$(AssemblyName)</Company>
         <Description>Explorer Tab Utility: Force new windows to tabs. Streamline navigation!</Description>
         <Copyright>Copyright © 2025 w4po</Copyright>
-        <PackageProjectUrl>https://github.com/w4po/ExplorerTabUtility</PackageProjectUrl>
-        <RepositoryUrl>https://github.com/w4po/ExplorerTabUtility</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/sheetau/ExplorerTabUtility</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/sheetau/ExplorerTabUtility</RepositoryUrl>
         <SatelliteResourceLanguages>none</SatelliteResourceLanguages>
         <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     </PropertyGroup>
