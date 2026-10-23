@@ -14,7 +14,8 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ApplicationIcon>Assets/Icon.ico</ApplicationIcon>
-    <Version>3.0.0</Version>
+    <Version>3.0.1</Version>
+    <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
     <Title>Explorer Tab Utility</Title>
     <Authors>w4po;sheetau</Authors>
     <Description>Explorer tabs and shortcuts, with native Windows settings.</Description>
@@ -22,7 +23,8 @@
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.3.9" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.1.9" />
     <PackageReference Include="H.Hooks" Version="1.7.0" />
     <Content Update="Assets/Icon.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

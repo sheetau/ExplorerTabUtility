@@ -16,11 +16,14 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<ToggleSwitch, Func<bool>> _preferences = new();
     private bool _loading;
     private bool _exiting;
+    private readonly System.Threading.Tasks.TaskCompletionSource _ready = new(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
+    public System.Threading.Tasks.Task Ready => _ready.Task;
     public nint Handle => WinRT.Interop.WindowNative.GetWindowHandle(this);
     public MainWindow(ProfileManager profiles)
     {
         _profiles = profiles;
         InitializeComponent();
+        Root.Loaded += (_, _) => _ready.TrySetResult();
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         AppWindow.TitleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
@@ -49,7 +52,7 @@ public sealed partial class MainWindow : Window
         AddPreference("Mouse shortcuts", "Enable your mouse shortcuts.", () => SettingsManager.IsMouseHookActive, value => SettingsManager.IsMouseHookActive = value);
         AddPreference("Start with Windows", "Run in the notification area when you sign in.", () => RegistryManager.IsStartupEnabled, value => { if (value != RegistryManager.IsStartupEnabled) RegistryManager.ToggleStartup(); });
         AddPreference("Show tray icon", "Open settings and control hooks from the notification area.", () => !SettingsManager.IsTrayIconHidden, value => SettingsManager.IsTrayIconHidden = !value);
-        AddPreference("Check for updates on startup", "Notify when a newer release is available.", () => SettingsManager.AutoUpdate, value => SettingsManager.AutoUpdate = value);
+        AddPreference("Check for updates", "Notify about new releases at startup and while running.", () => SettingsManager.AutoUpdate, value => SettingsManager.AutoUpdate = value);
         AddPreference("Remember closed tabs", "Keep closed locations between app sessions.", () => SettingsManager.SaveClosedHistory, value => SettingsManager.SaveClosedHistory = value);
         AddPreference("Restore open tabs", "Reopen your previous Explorer locations after a restart.", () => SettingsManager.RestorePreviousWindows, value => SettingsManager.RestorePreviousWindows = value);
         SettingsManager.StaticPropertyChanged += (_, _) => RefreshPreferences();
@@ -109,4 +112,11 @@ public sealed partial class MainWindow : Window
         StatusBar.Visibility = Visibility.Visible;
     }
     public void ExitWindow() { _exiting = true; Close(); }
+    public void ShowUpdate(string message, Action install)
+    {
+        ShowStatus("Update available", message);
+        var button = new Button { Content = "Update and restart" };
+        button.Click += (_, _) => { button.IsEnabled = false; install(); };
+        StatusBar.ActionButton = button;
+    }
 }

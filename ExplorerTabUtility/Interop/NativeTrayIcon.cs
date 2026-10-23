@@ -12,6 +12,7 @@ public sealed class NativeTrayIcon : IDisposable
 {
     private const string WindowClass = "ExplorerTabUtility.TrayWindow";
     private const uint CallbackMessage = 0x8001;
+    private const uint ShowMenuMessage = 0x8003;
     private readonly WindowProc _procedure;
     private readonly Action<TrayCommand> _command;
     private readonly Action _shutdown;
@@ -20,6 +21,9 @@ public sealed class NativeTrayIcon : IDisposable
     private readonly uint _taskbarCreated;
     private bool _visible;
     private bool _disposed;
+    private bool _menuQueued;
+    private bool _menuOpen;
+    private System.Drawing.Point _menuPoint;
 
     public NativeTrayIcon(string iconPath, Action<TrayCommand> command, Action shutdown)
     {
@@ -37,18 +41,20 @@ public sealed class NativeTrayIcon : IDisposable
     }
 
     public static void ShowExistingSettings()
+        => SendInstanceCommand(TrayCommand.Settings);
+    public static void SendInstanceCommand(TrayCommand command)
     {
         var window = FindWindow(WindowClass, WindowClass);
         if (window == 0) return;
         GetWindowThreadProcessId(window, out var processId);
         AllowSetForegroundWindow(processId);
-        PostMessage(window, 0x8002, 0, 0);
+        PostMessage(window, 0x8002, (nuint)command, 0);
     }
 
     private NotifyIconData Data() => new()
     {
         Size = (uint)Marshal.SizeOf<NotifyIconData>(), Window = _window, Id = 1,
-        Flags = 1 | 2 | 4, Callback = CallbackMessage, Icon = _icon, Tip = "Explorer Tab Utility",
+        Flags = 1 | 2 | 4 | 0x80, Callback = CallbackMessage, Icon = _icon, Tip = "Explorer Tab Utility",
         Info = "", InfoTitle = ""
     };
     public void SetVisible(bool visible)
@@ -60,6 +66,16 @@ public sealed class NativeTrayIcon : IDisposable
         ShellNotifyIcon(visible ? 0u : 2u, ref data);
         if (visible) { data.Version = 4; ShellNotifyIcon(4, ref data); }
     }
+    public void NotifyUpdate(string version)
+    {
+        if (!_visible || _disposed) return;
+        var data = Data();
+        data.Flags = 0x10;
+        data.InfoTitle = "Explorer Tab Utility update";
+        data.Info = $"Version {version} is available. Click to update and restart.";
+        data.InfoFlags = 1 | 0x80;
+        ShellNotifyIcon(1, ref data);
+    }
     private nint ProcessMessage(nint window, uint message, nuint wParam, nint lParam)
     {
         if (message == 0x11) return 1; // WM_QUERYENDSESSION
@@ -70,18 +86,39 @@ public sealed class NativeTrayIcon : IDisposable
             SetVisible(true);
             return 0;
         }
-        if (message == 0x8002) { _command(TrayCommand.Settings); return 0; }
+        if (message == 0x8002)
+        {
+            var command = wParam == 0 ? TrayCommand.Settings : (TrayCommand)wParam;
+            if (Enum.IsDefined(command)) _command(command);
+            return 0;
+        }
+        if (message == ShowMenuMessage)
+        {
+            _menuQueued = false;
+            if (!_disposed && !_menuOpen) ShowMenu();
+            return 0;
+        }
         if (message == CallbackMessage)
         {
             var action = (uint)((long)lParam & 0xffff);
-            if (action == 0x7b || action == 0x205) ShowMenu();
-            else if (action is 0x203 or 0x400 or 0x401) _command(TrayCommand.Settings);
+            // Version 4 uses WM_CONTEXTMENU and NIN_SELECT, not the legacy
+            // mouse-up messages. Return to the Shell before entering a menu loop.
+            if (action == 0x7b && !_menuQueued && !_menuOpen)
+            {
+                _menuPoint = new(unchecked((short)((long)wParam & 0xffff)), unchecked((short)(((long)wParam >> 16) & 0xffff)));
+                if (_menuPoint.X == -1 && _menuPoint.Y == -1) GetCursorPos(out _menuPoint);
+                _menuQueued = true;
+                PostMessage(_window, ShowMenuMessage, 0, 0);
+            }
+            else if (action is 0x400 or 0x401 or 0x405) _command(TrayCommand.Settings);
             return 0;
         }
         return DefWindowProc(window, message, wParam, lParam);
     }
     private void ShowMenu()
     {
+        _menuOpen = true;
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
         var menu = CreatePopupMenu();
         void Item(TrayCommand id, string text, bool check = false) => AppendMenu(menu, check ? 8u : 0u, (nuint)id, text);
         void Separator() => AppendMenu(menu, 0x800, 0, null);
@@ -97,14 +134,11 @@ public sealed class NativeTrayIcon : IDisposable
         Item(TrayCommand.Updates, "Check for updates");
         Separator();
         Item(TrayCommand.Exit, "Exit");
-        GetCursorPos(out var point);
-        var previous = WinAPI.WinApi.GetForegroundWindow();
-        ShowWindow(_window, 4);
         WinAPI.WinApi.SetForegroundWindow(_window);
         uint selected;
-        try { selected = TrackPopupMenu(menu, 0x100 | 2, point.X, point.Y, 0, _window, 0); }
-        finally { DestroyMenu(menu); ShowWindow(_window, 0); PostMessage(_window, 0, 0, 0); }
-        if (selected != (uint)TrayCommand.Settings && previous != 0) WinAPI.WinApi.SetForegroundWindow(previous);
+        try { selected = TrackPopupMenu(menu, 0x100 | 2, _menuPoint.X, _menuPoint.Y, 0, _window, 0); }
+        finally { DestroyMenu(menu); _menuOpen = false; PostMessage(_window, 0, 0, 0); }
+        System.Diagnostics.Trace.WriteLine($"Tray menu closed after {elapsed.ElapsedMilliseconds} ms; command={selected}.");
         if (selected != 0) _command((TrayCommand)selected);
     }
     public void Dispose()
@@ -156,5 +190,4 @@ public sealed class NativeTrayIcon : IDisposable
     [DllImport("user32.dll")] private static extern uint TrackPopupMenu(nint menu, uint flags, int x, int y, int reserved, nint window, nint rect);
     [DllImport("user32.dll")] private static extern bool DestroyMenu(nint menu);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out System.Drawing.Point point);
-    [DllImport("user32.dll")] private static extern bool ShowWindow(nint window, int command);
 }

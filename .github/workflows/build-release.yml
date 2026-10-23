@@ -28,7 +28,13 @@ jobs:
         run: msbuild ExplorerTabUtility.sln /restore /p:Configuration=Release /p:RuntimeIdentifier=win-${{ matrix.arch }} /v:minimal
       - name: Publish
         shell: pwsh
-        run: msbuild ExplorerTabUtility/ExplorerTabUtility.csproj /restore /t:Publish /p:Configuration=Release /p:RuntimeIdentifier=win-${{ matrix.arch }} /p:SelfContained=true /p:PublishDir=../publish/winui/${{ matrix.arch }}/ /v:minimal
+        run: msbuild ExplorerTabUtility/ExplorerTabUtility.csproj /restore /t:Publish /p:Configuration=Release /p:RuntimeIdentifier=win-${{ matrix.arch }} /p:SelfContained=true /p:PublishDir=../publish/release/${{ matrix.arch }}/ /v:minimal
+      - name: Check update package handling
+        if: matrix.arch == 'x64'
+        shell: pwsh
+        run: |
+          & tests/ExplorerTabUtility.IntegrationTests/bin/Release/net10.0-windows10.0.19041.0/win-x64/ExplorerTabUtility.IntegrationTests.exe --updates
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Package
         id: package
         shell: pwsh
@@ -36,10 +42,8 @@ jobs:
           [xml]$project = Get-Content -LiteralPath ExplorerTabUtility/ExplorerTabUtility.csproj -Encoding utf8 -Raw
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { 'v' + $project.Project.PropertyGroup.Version + '-' + $env:GITHUB_SHA.Substring(0, 7) }
           $name = "ExplorerTabUtility_$($version)_${{ matrix.arch }}_WinUI3.zip"
-          $source = 'publish/winui/${{ matrix.arch }}'
-          Copy-Item -LiteralPath LICENSE -Destination "$source/LICENSE"
-          Copy-Item -LiteralPath README.md -Destination "$source/README.md"
-          Compress-Archive -Path "$source/*" -DestinationPath $name
+          $source = 'publish/release/${{ matrix.arch }}'
+          ./tools/Package.ps1 -Source $source -Destination $name
           "name=$name" >> $env:GITHUB_OUTPUT
       - uses: actions/upload-artifact@v4
         with:
@@ -61,4 +65,4 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" packages/*.zip --verify-tag --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" packages/*.zip --verify-tag --notes-file .github/release-notes.md --latest

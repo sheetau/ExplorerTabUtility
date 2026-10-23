@@ -93,7 +93,7 @@ internal sealed class AppSettings
     public int WindowHeight { get; set; } = 820;
     public bool IsFirstRun { get; set; } = true;
     public bool IsTrayIconHidden { get; set; }
-    public bool AutoUpdate { get; set; }
+    public bool AutoUpdate { get; set; } = true;
     public string HotKeyProfiles { get; set; } = Constants.DefaultHotKeyProfiles;
     public bool SaveClosedWindows { get; set; }
     public bool RestorePreviousWindows { get; set; }

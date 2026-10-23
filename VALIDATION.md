@@ -1,5 +1,24 @@
 # Validation
 
+## Release 3.0.1: tray and in-app updates
+
+The user confirmed that the repaired tray menu stays open, dismisses on an outside click, and can be opened again. Version-4 notification callbacks now handle WM_CONTEXTMENU only, queue the menu after the Shell callback, and avoid showing/hiding the owner window or restoring another application's focus.
+
+Update checks run at startup and every 12 hours when enabled, and can also be invoked from the tray. Stable GitHub releases are filtered by version and process architecture. An in-app action downloads the matching ZIP, checks the published size and SHA-256 digest, validates archive paths and the package manifest, then launches the staged application as its own update helper. The helper waits for the running process to exit, backs up and replaces owned files, and waits for the new settings window to load before confirming success. Failed startup restores the previous files and restarts that version. Settings remain outside the application directory. Unknown user files are retained; obsolete manifest-owned files and successful staging data are removed.
+
+Focused checks passed for version equality/downgrades/prereleases, architecture and digest filtering, replacement and removal of owned files, rollback, locked destinations, and archive path traversal rejection. Real staged-helper checks passed for update/restart, settings and user-file retention, cache cleanup, and rollback/restart after corrupting the settings XBF embedded in the PRI. External XBF and icon corruption were insufficient failure fixtures because Windows used its embedded/fallback resources; the final rollback check corrupts the embedded page itself.
+
+The x64 and ARM64 portable packages use the WinUI component packages without unused AI/ML/search/widgets payloads. Release symbols and repository documentation are excluded; runtime files, the MIT license, and an ownership manifest are retained. New installations enable update checks by default; existing preferences remain respected.
+
+Update-only checks (no Explorer fixtures):
+
+```powershell
+& tests/ExplorerTabUtility.IntegrationTests/bin/Release/net10.0-windows10.0.19041.0/win-x64/ExplorerTabUtility.IntegrationTests.exe --updates
+& tests/ExplorerTabUtility.IntegrationTests/bin/Release/net10.0-windows10.0.19041.0/win-x64/ExplorerTabUtility.IntegrationTests.exe --update-lifecycle publish/3.0.1/x64
+```
+
+The lifecycle check requires other utility instances stopped. Package the publish folder with `tools/Package.ps1` first to generate its ownership manifest. Build/acceptance commands below describe the current WinUI version; sections labelled 2.5.x or 3.0.0 retain their historical results.
+
 ## WinUI 3 migration (3.0.0)
 
 Tested on 2026-10-23 on Windows 11 x64, with Visual Studio MSBuild 18.9 and .NET SDK 10.0.400. The solution builds without warnings or errors. The application uses Microsoft.WindowsAppSDK 2.5.1 and .NET 10; the previous WPF/.NET Framework targets have been removed.
@@ -81,3 +100,32 @@ dotnet tests/ExplorerTabUtility.IntegrationTests/bin/Release/net9.0-windows/Expl
 After READY, reopen the Explorer taskbar context menu and left-click its File Explorer launch item once. The harness forces a new tab in its own target, waits for the default folder to become active, and fails if a native source window was created. It restores settings and closes its fixture windows afterward.
 
 The optimized click is deliberately limited to an identified English/Japanese launch item, no held modifiers, an existing target window, and Window Hook enabled. Recent/pinned folder destinations, other apps, keyboard activation, modified clicks, and unknown layouts/languages continue through Windows normally. No pinned shortcut or registry entry is edited.
+
+## Building and checking the current version
+
+## Build
+
+Install Visual Studio with the **.NET desktop development** workload, a Windows SDK, and the .NET 10 SDK. From a Visual Studio Developer PowerShell:
+
+```powershell
+msbuild ExplorerTabUtility.sln /restore /p:Configuration=Release
+```
+
+Use Visual Studio's full `MSBuild.exe`: Shell COM references require `ResolveComReference`, which `dotnet build` does not support. The default architecture is x64. To produce a portable build:
+
+```powershell
+msbuild ExplorerTabUtility/ExplorerTabUtility.csproj /restore /t:Publish /p:Configuration=Release /p:RuntimeIdentifier=win-x64 /p:SelfContained=true /p:PublishDir=../publish/3.0.1/x64/
+```
+
+Replace `win-x64` with `win-arm64` and the destination with `../publish/3.0.1/arm64/` for ARM64. GitHub Actions builds both architectures and uploads unsigned ZIPs. Tags beginning with `v` also create a GitHub release.
+
+## Focused acceptance checks
+
+These checks require an interactive Windows 11 desktop and other utility instances stopped. They use an isolated settings directory and temporary fixture folders, then close their fixture windows. They do not run on CI.
+
+```powershell
+msbuild tests/ExplorerTabUtility.IntegrationTests/ExplorerTabUtility.IntegrationTests.csproj /restore /p:Configuration=Release
+& tests/ExplorerTabUtility.IntegrationTests/bin/Release/net10.0-windows10.0.19041.0/win-x64/ExplorerTabUtility.IntegrationTests.exe --smoke
+```
+
+The smoke check covers shortcut autosave, a known folder-only request, new/reused `/select` requests with different extensions, and Shell API multi-selection. Omit `--smoke` for the full selection/navigation/shutdown suite. `--taskbar` and `--taskbar-pinned "C:\path\to\folder"` are opt-in checks requiring a real user click after READY. Recorded results and limitations are in [VALIDATION.md](VALIDATION.md).

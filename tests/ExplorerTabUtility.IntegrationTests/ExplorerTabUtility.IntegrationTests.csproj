@@ -16,7 +16,7 @@
   <ItemGroup>
     <Page Remove="TestApp.xaml" />
     <ApplicationDefinition Include="TestApp.xaml" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.3.9" />
     <ProjectReference Include="../../ExplorerTabUtility/ExplorerTabUtility.csproj" />
   </ItemGroup>
 </Project>

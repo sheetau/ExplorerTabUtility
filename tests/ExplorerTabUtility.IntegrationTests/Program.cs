@@ -43,6 +43,9 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains("--updates")) return UpdateChecks.Run();
+        if (args.Length == 2 && args[0] == "--verify-release") return UpdateChecks.VerifyRelease(args[1]).GetAwaiter().GetResult();
+        if (args.Length == 2 && args[0] == "--update-lifecycle") return UpdateChecks.Lifecycle(args[1]).GetAwaiter().GetResult();
         _smoke = args.Contains("--smoke");
         _manualTaskbar = args.Contains("--taskbar");
         var pinnedIndex = Array.IndexOf(args, "--taskbar-pinned");
