@@ -1,11 +1,12 @@
-# Validation of 2.5.1
+# Validation of 2.5.2
 
 Tested on 2026-10-23 on Windows 11 build 26200, x64, using Visual Studio MSBuild 18.9 and .NET SDK 10.0.400. Both the .NET 9 Windows Desktop and .NET Framework 4.8.1 targets were built and exercised on the real desktop.
 
-The solution builds without warnings or errors. The real Explorer harness passed all 12 scenarios on each runtime:
+The solution builds without warnings or errors. The real Explorer harness passed all 13 scenarios on each runtime:
 
 | Scenario | .NET 9 | .NET Framework 4.8.1 |
 | --- | --- | --- |
+| Utility-originated folder-only request returns without waiting for enumeration | Pass | Pass |
 | `/select` creates a tab and selects the file | Pass | Pass |
 | `/select` reuses a tab and changes the selection between `sample.txt` and `sample.md` | Pass | Pass |
 | `SHOpenFolderAndSelectItems` multi-selection | Pass | Pass |
@@ -28,3 +29,5 @@ The folder view emitted `DocumentComplete`, followed by the initial selection ch
 Virtual/network folder behavior, other Windows builds, third-party Shell namespace providers, and Explorer restarts were not exhaustively tested. A missing enumeration event reaches a ten-second failure deadline and leaves the native source window available. An ordinary successful open does not wait for that deadline.
 
 Build and rerun instructions are in [README.md](README.md).
+
+In 2.5.2 the destination window is brought forward immediately after issuing navigation, even while a possible external selection request is still being captured. Utility-originated folder-only requests skip enumeration waits altogether. The new folder-only test measured method return at 373 ms on .NET 9 and 1160 ms on .NET Framework 4.8.1 on this run, including tab creation and native navigation setup. These observations do not establish a speedup ratio against 2.5.1; the change removes the enumeration dependency from that path. External folder opens remain indistinguishable from delayed reveals with the current Shell registration data, so their source is retained until capture completes, while the destination is already presented.

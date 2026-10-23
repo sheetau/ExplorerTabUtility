@@ -98,6 +98,16 @@ internal static class Program
         _watcher.SetReuseTabs(true);
         _watcher.StartHook();
 
+        // A known folder-only request can return as soon as navigation is issued.
+        var direct = Path.Combine(Root, "direct folder open");
+        Directory.CreateDirectory(direct);
+        var directElapsed = Stopwatch.StartNew();
+        await _watcher.SwitchTo(direct, _target);
+        Console.WriteLine($"Folder-only request returned in {directElapsed.ElapsedMilliseconds} ms");
+        await Until(() => IsInTarget(direct) && WinApi.GetForegroundWindow() == _target, "direct folder tab is presented");
+        if (TabCount(direct) != 1) throw new Exception("Direct folder open created duplicate tabs.");
+        Console.WriteLine("PASS known folder-only request");
+
         await Reveal("/select new tab", folder, new[] { "sample.txt" }, () => SelectCommand(Path.Combine(folder, "sample.txt")));
         await Reveal("/select reused tab, same basename", folder, new[] { "sample.md" }, () => SelectCommand(Path.Combine(folder, "sample.md")));
         await Reveal("Shell API multi-selection", folder, new[] { "sample.txt", "sample.md" }, () => SelectNative(folder, "sample.txt", "sample.md"));

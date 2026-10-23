@@ -2,7 +2,13 @@
 
 This is sheetau's independently maintained version of [w4po/ExplorerTabUtility](https://github.com/w4po/ExplorerTabUtility), based on v2.5.0 (`fad736353210d36595c6e6caa77ac7ad9129b3ee`). It keeps Explorer's windows as tabs while preserving the file selection from **Show in folder / Reveal in Explorer** requests.
 
-## What changed in 2.5.1
+## What changed in 2.5.2
+
+- Present a new or reused destination tab as soon as navigation is issued, before waiting for source selection capture or destination enumeration.
+- Utility-originated folder opens with no selection return immediately after requesting navigation. They skip the enumeration wait entirely.
+- External Explorer windows still keep their native request alive in the background: an empty selection at registration cannot distinguish a folder-only open from a delayed reveal request.
+
+## Selection handling introduced in 2.5.1
 
 - Keep the source Explorer alive until its initial folder enumeration completes. Capture full item paths, including hidden extensions, then restore the selection and keyboard focus, and bring the selected file into view in the destination tab.
 - Prepare the destination while the source loads. Selection capture and restoration are driven by Shell `EnumDone` events, without a fixed capture delay or selection retry loop.
@@ -50,7 +56,7 @@ dotnet tests/ExplorerTabUtility.IntegrationTests/bin/Release/net9.0-windows/Expl
 & tests/ExplorerTabUtility.IntegrationTests/bin/Release/net481/ExplorerTabUtility.IntegrationTests.exe
 ```
 
-Coverage: new and reused `/select` requests; same basenames with different extensions; Shell API single and multiple selection; subfolder selection; Japanese, spaces and `#` in paths; ordinary empty folders; inactive-tab activation including repeated identical selection; immediate reuse; reuse disabled; and cancellation during conversion. See [VALIDATION.md](VALIDATION.md) for the recorded results.
+Coverage: known folder-only requests without a selection wait; new and reused `/select` requests; same basenames with different extensions; Shell API single and multiple selection; subfolder selection; Japanese, spaces and `#` in paths; ordinary empty folders; inactive-tab activation including repeated identical selection; immediate reuse; reuse disabled; and cancellation during conversion. See [VALIDATION.md](VALIDATION.md) for the recorded results.
 
 Explorer still performs its native navigation; this utility does not replace Shell registrations or install a registry interceptor. Network folders, third-party namespace extensions, and modified Explorer implementations can behave differently. A view that does not provide the required enumeration event is left as its native window instead of losing the reveal request.
 

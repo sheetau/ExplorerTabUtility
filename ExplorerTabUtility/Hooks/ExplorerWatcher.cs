@@ -722,6 +722,8 @@ public class ExplorerWatcher : IHook
                 {
                     windowHandle = WinApi.GetParent(existingTab);
                     await SelectTabByHandle(windowHandle, existingTab);
+                    // Present the destination without waiting for a late reveal.
+                    WinApi.RestoreWindowToForeground(windowHandle);
                     if (selectionReady != null) await selectionReady;
                     var existingWindow = GetWindowByTabHandle(existingTab);
                     if (existingWindow == null || !IsAtLocation(existingWindow, windowToOpen.Location)) return false;
@@ -753,6 +755,14 @@ public class ExplorerWatcher : IHook
             // Explorer shutdown, or success). Continuations run outside COM callbacks.
             using var ready = new ShellViewReady(window, () => IsAtLocation(window, windowToOpen.Location));
             await Navigate(window, windowToOpen.Location);
+            WinApi.RestoreWindowToForeground(mainWindowHWnd);
+
+            // An explicit utility request without a selection has nothing to
+            // capture or restore. External windows always supply selectionReady:
+            // an empty selection at registration does not rule out a late /select.
+            if (selectionReady == null && windowToOpen.SelectedItems?.Length is not > 0)
+                return true;
+
             await ready.WaitAsync(_shellLifetime.Token);
             if (selectionReady != null) await selectionReady;
             if (!IsAtLocation(window, windowToOpen.Location)) { Trace.WriteLine($"Unexpected location: {GetLocation(window)} expected {windowToOpen.Location}"); return false; }
