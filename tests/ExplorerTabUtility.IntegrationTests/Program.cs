@@ -28,6 +28,7 @@ internal static class Program
     private static nint _target;
     private static int _failures;
     private static bool _manualTaskbar;
+    private static string? _expectedPinned;
     private sealed class LaunchCompletionListener(TaskCompletionSource<bool> completion) : TraceListener
     {
         public override void Write(string? message) { }
@@ -43,6 +44,13 @@ internal static class Program
     private static int Main(string[] args)
     {
         _manualTaskbar = args.Contains("--taskbar");
+        var pinnedIndex = Array.IndexOf(args, "--taskbar-pinned");
+        if (pinnedIndex >= 0)
+        {
+            if (pinnedIndex + 1 >= args.Length) { Console.Error.WriteLine("--taskbar-pinned requires the expected folder path."); return 2; }
+            _expectedPinned = args[pinnedIndex + 1];
+            _manualTaskbar = true;
+        }
         if (Process.GetProcessesByName("ExplorerTabUtility").Length != 0)
         {
             Console.Error.WriteLine("Stop the running ExplorerTabUtility before executing these integration tests.");
@@ -182,7 +190,7 @@ internal static class Program
         using var listener = new LaunchCompletionListener(completion);
         Trace.Listeners.Add(listener);
         using var comparer = new ExplorerTabUtility.Interop.ShellPathComparer();
-        var defaultLocation = ExplorerTabUtility.Helpers.Helper.GetDefaultExplorerLocation();
+        var defaultLocation = _expectedPinned ?? ExplorerTabUtility.Helpers.Helper.GetDefaultExplorerLocation();
         bool IsDefaultTabActive()
         {
             foreach (dynamic window in _shell.Windows())
@@ -217,7 +225,9 @@ internal static class Program
         if (hook == 0) throw new Exception("Cannot observe native window creation.");
         try
         {
-            Console.WriteLine("READY: close any open jump list, right-click the Explorer taskbar icon, then click File Explorer once.");
+            Console.WriteLine(_expectedPinned == null
+                ? "READY: close any open jump list, right-click the Explorer taskbar icon, then click File Explorer once."
+                : "READY: close any open jump list, right-click the Explorer taskbar icon, then click the expected pinned folder once.");
             Console.Out.Flush();
             var watch = Stopwatch.StartNew();
             while (watch.ElapsedMilliseconds < 120000)
@@ -227,7 +237,9 @@ internal static class Program
                     // Let already queued WinEvents arrive before asserting no source was created.
                     await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
                     if (created.Count != 0) throw new Exception("Taskbar launch used a native source window instead of the direct route.");
-                    Console.WriteLine("PASS taskbar launch: active target gained the default folder tab, zero native source windows created.");
+                    Console.WriteLine(_expectedPinned == null
+                        ? "PASS taskbar launch: active target gained the default folder tab, zero native source windows created."
+                        : "PASS pinned folder: active target gained the expected folder tab, zero native source windows created.");
                     return;
                 }
                 await Task.Delay(25);

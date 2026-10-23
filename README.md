@@ -2,6 +2,11 @@
 
 This is sheetau's independently maintained version of [w4po/ExplorerTabUtility](https://github.com/w4po/ExplorerTabUtility), based on v2.5.0 (`fad736353210d36595c6e6caa77ac7ad9129b3ee`). It keeps Explorer's windows as tabs while preserving the file selection from **Show in folder / Reveal in Explorer** requests.
 
+## What changed in 2.5.4
+
+- Pinned folders in the Explorer taskbar context menu now use the same direct tab route as File Explorer. Each visible pinned row is matched to its actual pinned-folder path from Quick Access; the existing Reuse Tabs setting applies.
+- File items and ambiguous duplicate folder names keep the native route. The trailing pin/unpin area remains available to Windows. Scrolling or native context-menu interaction invalidates cached coordinates; reopening the menu rebuilds the direct routes.
+
 ## What changed in 2.5.3
 
 - With **Window Hook** enabled and an existing Explorer target window, an unmodified left click on the taskbar jump list's **File Explorer** launch item opens the default folder directly as a tab. Native source window creation and selection capture are bypassed for that identified command.
@@ -62,7 +67,7 @@ dotnet tests/ExplorerTabUtility.IntegrationTests/bin/Release/net9.0-windows/Expl
 & tests/ExplorerTabUtility.IntegrationTests/bin/Release/net481/ExplorerTabUtility.IntegrationTests.exe
 ```
 
-The optional `--taskbar` argument runs a manual taskbar launch test; wait for READY and click File Explorer in the real taskbar context menu. It verifies the configured default folder in the active target tab and zero native source windows.
+Use `--taskbar-pinned "C:\path\to\folder"` for the focused pinned-folder test. The optional `--taskbar` argument runs a manual taskbar launch test; wait for READY and click File Explorer in the real taskbar context menu. It verifies the configured default folder in the active target tab and zero native source windows.
 
 Coverage: known folder-only requests without a selection wait; new and reused `/select` requests; same basenames with different extensions; Shell API single and multiple selection; subfolder selection; Japanese, spaces and `#` in paths; ordinary empty folders; inactive-tab activation including repeated identical selection; immediate reuse; reuse disabled; and cancellation during conversion. See [VALIDATION.md](VALIDATION.md) for the recorded results.
 

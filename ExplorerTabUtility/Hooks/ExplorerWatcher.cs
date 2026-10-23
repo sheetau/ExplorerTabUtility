@@ -1050,9 +1050,10 @@ public class ExplorerWatcher : IHook
         _defaultLocation = Helper.GetDefaultExplorerLocation(_shellPathComparer);
         _taskbarLaunchHook = new TaskbarLaunchHook(_dispatcher,
             () => !_disposed && _isForcingTabs && Helper.IsFileExplorerWindow(_mainWindowHandle),
-            async () =>
+            async location =>
             {
-                var request = new WindowRecord(_defaultLocation);
+                var destination = location?.StartsWith("::", StringComparison.Ordinal) == true ? "shell:" + location : location ?? _defaultLocation;
+                var request = new WindowRecord(destination);
                 if (!await OpenTabNavigateWithSelection(request, _mainWindowHandle) && !_disposed)
                     await OpenNewWindowWithSelection(request);
             });

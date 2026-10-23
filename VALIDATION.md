@@ -1,4 +1,22 @@
-# Validation of 2.5.3
+# Validation
+
+## Pinned folders (2.5.4): focused validation
+
+At the user's request, validation for this change was limited to building both targets and one real pinned-folder interaction; the 13 existing scenarios were not rerun. The user clicked the pinned Downloads row in the actual taskbar context menu. The Framework 4.8.1 harness observed the direct route returning in 424 ms, verified that the active target tab was the exact expected folder, and observed zero native source windows. Thirteen visible pinned-folder rows were resolved from Quick Access. This timing is a single observation, not a guarantee.
+
+The menu's Pinned group exposes display names but no target paths. The resolver obtains folder-only items marked `System.Home.IsPinned` from the Shell Quick Access namespace, retains their full parsing paths, and accepts only unique name-to-path matches. Virtual folder parsing paths are retained too. Pin data is read on a temporary STA while UI Automation stays on a worker. Mouse callbacks use cached paths and geometry. The trailing two row-heights are reserved for the pin/unpin control; scrolling and native menu actions invalidate the snapshot to avoid stale coordinates.
+
+To repeat only the new acceptance check:
+
+```powershell
+& tests/ExplorerTabUtility.IntegrationTests/bin/Release/net481/ExplorerTabUtility.IntegrationTests.exe --taskbar-pinned "C:\path\to\pinned-folder"
+```
+
+After READY, reopen the taskbar menu and click the text of that pinned folder. The existing 2.5.3 default-launch and 2.5.2 selection test results above are historical results, not additional 2.5.4 runs.
+
+## Results from earlier versions
+
+ Validation of 2.5.4
 
 Tested on 2026-10-23 on Windows 11 build 26200, x64, using Visual Studio MSBuild 18.9 and .NET SDK 10.0.400. Both the .NET 9 Windows Desktop and .NET Framework 4.8.1 targets were built and exercised on the real desktop.
 
@@ -50,3 +68,4 @@ dotnet tests/ExplorerTabUtility.IntegrationTests/bin/Release/net9.0-windows/Expl
 After READY, reopen the Explorer taskbar context menu and left-click its File Explorer launch item once. The harness forces a new tab in its own target, waits for the default folder to become active, and fails if a native source window was created. It restores settings and closes its fixture windows afterward.
 
 The optimized click is deliberately limited to an identified English/Japanese launch item, no held modifiers, an existing target window, and Window Hook enabled. Recent/pinned folder destinations, other apps, keyboard activation, modified clicks, and unknown layouts/languages continue through Windows normally. No pinned shortcut or registry entry is edited.
+
