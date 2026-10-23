@@ -1,4 +1,4 @@
-- 「ファイルの場所を開く」操作での選択状態・フォーカス・表示位置を、タブ化した後も維持します。
-- 既存タブの再利用を改善し、タスクバーの「File Explorer」とピン留めフォルダーからのタブ起動を高速化しました。
-- 設定・タブ検索をWinUI 3へ刷新しました。設定は1ページで自動保存し、トレイにはWindows標準メニューを使用します。
-- GitHub Releasesの新版を通知し、アプリ内の「Update and restart」から更新できるようにしました。
+- Preserve file selection, keyboard focus, and scroll position when converting Show in folder / Reveal in Explorer windows into tabs.
+- Improve tab reuse and open tabs directly from the taskbar's File Explorer command and identified pinned folders.
+- Replace settings and tab search with WinUI 3, using a single settings page, automatic saving, and a native Windows tray menu.
+- Notify about new GitHub releases and install them through Update and restart.

@@ -1,33 +1,33 @@
 # ExplorerTabUtility
 
-Windows 11のエクスプローラーをタブにまとめる常駐アプリです。「ファイルの場所を開く」で指定されたファイルの選択・フォーカス・表示位置も引き継ぎます。
+Keep Windows 11 File Explorer windows together as tabs while preserving the selected file, keyboard focus, and scroll position from **Show in folder / Reveal in Explorer**.
 
-[w4po/ExplorerTabUtility](https://github.com/w4po/ExplorerTabUtility)を基に、選択状態の保持と操作速度を改善した別バージョンです。
+This is an independently maintained version of [w4po/ExplorerTabUtility](https://github.com/w4po/ExplorerTabUtility), with improved selection handling and responsiveness.
 
-## 導入
+## Install
 
-1. [最新リリース](https://github.com/sheetau/ExplorerTabUtility/releases/latest)から端末に合うZIPを取得します。通常は **x64**、ARM搭載PCは **arm64** です。
-2. 書き込み可能なフォルダーへZIP全体を展開し、`ExplorerTabUtility.exe`を起動します。付属ファイルは同じフォルダーに置いてください。
+1. Download the ZIP for your device from the [latest release](https://github.com/sheetau/ExplorerTabUtility/releases/latest): **x64** for most PCs, or **arm64** for ARM-based PCs.
+2. Extract the entire ZIP into a writable folder and run `ExplorerTabUtility.exe`. Keep the accompanying files together.
 
-Windows 11の標準エクスプローラーに対応しています。必要なランタイムは同梱しています。別のExplorerTabUtilityが動いている場合は、先に終了してください。
+Windows 11 with native File Explorer tabs is required. The necessary runtimes are included. Exit any other ExplorerTabUtility instance before starting this version.
 
-## 使い方
+## Use
 
-- **Window hook**：新しいエクスプローラーをタブにまとめます。Ctrl＋Shiftを押しながら開くと通常のウィンドウで開けます。
-- **Reuse tabs**：同じフォルダーが開いていれば、そのタブを再利用します。
-- **Shortcuts**：キーボード・マウスの操作を設定します。項目を展開して編集し、下の **Add shortcut** で追加します。変更は自動保存されます。
-- **Preferences**：自動起動、更新通知、閉じたタブの記憶などを切り替えます。
+- **Window hook** converts new Explorer windows into tabs. Hold Ctrl+Shift while opening a location to keep it in a separate window.
+- **Reuse tabs** switches to an existing tab when the same folder is already open.
+- **Shortcuts** lets you configure keyboard and mouse actions. Expand a row to edit it, or use **Add shortcut** below the list. Changes are saved automatically.
+- **Preferences** controls startup, update notifications, closed-tab history, and other options.
 
-設定はトレイアイコンから開けます。実行ファイルをもう一度起動しても開きます。設定画面を閉じても常駐し、トレイメニューの **Exit** で終了します。
+Open settings from the tray icon or by running the executable again. Closing settings keeps the app running; choose **Exit** from the tray menu to quit.
 
-タスクバーの「File Explorer」と、ピン留めされたフォルダーからも直接タブを開けます。ファイルや識別できない項目はWindows標準の動作になります。
+The taskbar jump list's **File Explorer** command and identified pinned folders can open tabs directly. File items and unrecognized entries retain normal Windows behavior.
 
-## 更新と設定
+## Updates and settings
 
-**Check for updates** を有効にすると、起動時と常駐中にGitHub Releasesの新版を確認します。通知から設定を開き、**Update and restart** を押すと、設定を引き継いで更新・再起動します。トレイの **Check for updates** でも確認できます。
+Enable **Check for updates** to check GitHub Releases at startup and while the app is running. Open settings from an update notification and choose **Update and restart** to install the new version while keeping your settings. You can also choose **Check for updates** from the tray menu.
 
-手動で更新する場合はアプリを終了し、新しいZIPを同じフォルダーへ展開してください。設定は `%APPDATA%/ExplorerTabUtility/settings.json` に保存されます。
+To update manually, exit the app and extract the new ZIP into the same folder. Settings are stored in `%APPDATA%/ExplorerTabUtility/settings.json`.
 
-この版の配布・更新元は[このリポジトリ](https://github.com/sheetau/ExplorerTabUtility/releases)です。w4po版のWinGet／Chocolateyパッケージとは異なります。
+Downloads and updates come from [this repository](https://github.com/sheetau/ExplorerTabUtility/releases). Upstream's WinGet and Chocolatey packages install the w4po version.
 
-原作者はw4poおよび貢献者の皆さんです。[MITライセンス](LICENSE)で公開しています。
+The original application is by w4po and upstream contributors. Released under the [MIT license](LICENSE).
