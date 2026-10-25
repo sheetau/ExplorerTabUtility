@@ -14,7 +14,7 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ApplicationIcon>Assets/Icon.ico</ApplicationIcon>
-    <Version>3.0.1</Version>
+    <Version>3.0.2</Version>
     <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
     <Title>Explorer Tab Utility</Title>
     <Authors>w4po;sheetau</Authors>

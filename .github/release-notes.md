@@ -2,3 +2,4 @@
 - Improve tab reuse and open tabs directly from the taskbar's File Explorer command and identified pinned folders.
 - Replace settings and tab search with WinUI 3, using a single settings page, automatic saving, and a native Windows tray menu.
 - Notify about new GitHub releases and install them through Update and restart.
+- Keep background folder saves and refreshes from restoring Explorer or switching its tabs unexpectedly.

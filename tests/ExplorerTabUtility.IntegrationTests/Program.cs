@@ -30,6 +30,7 @@ internal static class Program
     private static int _failures;
     private static bool _manualTaskbar;
     private static bool _smoke;
+    private static bool _refreshRegression;
     private static string? _expectedPinned;
     private sealed class LaunchCompletionListener(TaskCompletionSource<bool> completion) : TraceListener
     {
@@ -47,6 +48,7 @@ internal static class Program
         if (args.Length == 2 && args[0] == "--verify-release") return UpdateChecks.VerifyRelease(args[1]).GetAwaiter().GetResult();
         if (args.Length == 2 && args[0] == "--update-lifecycle") return UpdateChecks.Lifecycle(args[1]).GetAwaiter().GetResult();
         _smoke = args.Contains("--smoke");
+        _refreshRegression = args.Contains("--refresh-regression");
         _manualTaskbar = args.Contains("--taskbar");
         var pinnedIndex = Array.IndexOf(args, "--taskbar-pinned");
         if (pinnedIndex >= 0)
@@ -130,6 +132,12 @@ internal static class Program
         _watcher.SetReuseTabs(true);
         _watcher.StartHook();
 
+        if (_refreshRegression)
+        {
+            await RefreshRegression(anchor, folder);
+            return;
+        }
+
         if (_manualTaskbar)
         {
             await TaskbarLaunch();
@@ -194,6 +202,69 @@ internal static class Program
             return source != null && IsWindowVisible((nint)(int)source!.HWND);
         }, "native source is visible after cancellation");
         Console.WriteLine("PASS shutdown during conversion preserves native window");
+    }
+
+    private static async Task RefreshRegression(string anchor, string folder)
+    {
+        var observer = new Window { Title = "Explorer refresh regression", Content = new Microsoft.UI.Xaml.Controls.TextBlock { Text = "Checking background Explorer refresh behavior…", Margin = new Thickness(24) } };
+        var observerHandle = WinRT.Interop.WindowNative.GetWindowHandle(observer);
+        try
+        {
+            _watcher!.SetReuseTabs(false);
+            await _watcher!.SwitchTo(folder, _target, new[] { Path.Combine(folder, "sample.txt") });
+            await Until(() => HasSelection(folder, new[] { "sample.txt" }), "selected folder fixture");
+            foreach (var (operation, minimize) in new[] { ("save", true), ("atomic save", true), ("rename", true), ("refresh", true), ("save", false), ("refresh", false), ("folder rename", true) })
+            {
+                var failuresBefore = _failures;
+                _watcher.SetReuseTabs(false);
+                var selectedName = File.Exists(Path.Combine(folder, "sample.txt")) ? "sample.txt" : "renamed.txt";
+                await _watcher.SwitchTo(folder, _target, new[] { Path.Combine(folder, selectedName) });
+                await Until(() => HasSelection(folder, new[] { selectedName }), "selection before background operation");
+                await _watcher.SwitchTo(anchor, _target);
+                await Task.Delay(150);
+                var activeTab = WinApi.FindWindowEx(_target, 0, "ShellTabWindowClass", null);
+                if (minimize) WinApi.ShowWindow(_target, 6);
+                observer.Activate();
+                WinApi.RestoreWindowToForeground(observerHandle);
+                await Until(() => WinApi.GetForegroundWindow() == observerHandle, "observer foreground");
+                _watcher.SetReuseTabs(true);
+                if (operation == "save") File.AppendAllText(Path.Combine(folder, selectedName), "changed");
+                if (operation == "atomic save")
+                {
+                    File.WriteAllText(Path.Combine(folder, "temporary.txt"), "replacement");
+                    File.Move(Path.Combine(folder, "temporary.txt"), Path.Combine(folder, "sample.txt"), true);
+                }
+                if (operation == "rename") File.Move(Path.Combine(folder, "sample.txt"), Path.Combine(folder, "renamed.txt"));
+                if (operation == "refresh") Find(folder)!.Refresh();
+                if (operation == "folder rename")
+                {
+                    var renamed = folder + " renamed";
+                    Directory.Move(folder, renamed);
+                    folder = renamed;
+                }
+                var clock = Stopwatch.StartNew();
+                while (clock.ElapsedMilliseconds < 2200)
+                {
+                    if ((minimize && !WinApi.IsIconic(_target)) || WinApi.GetForegroundWindow() != observerHandle || WinApi.FindWindowEx(_target, 0, "ShellTabWindowClass", null) != activeTab)
+                    {
+                        Console.WriteLine($"FAIL background {operation}: restored={!WinApi.IsIconic(_target)}, foreground={WinApi.GetForegroundWindow()}, activeChanged={WinApi.FindWindowEx(_target, 0, "ShellTabWindowClass", null) != activeTab}");
+                        _failures++;
+                        break;
+                    }
+                    await Task.Delay(25);
+                }
+                if (_failures == failuresBefore) Console.WriteLine($"PASS background {operation}, minimized={minimize}: foreground and active tab unchanged");
+            }
+            _watcher.SetReuseTabs(true);
+            await _watcher.SwitchTo(anchor, _target);
+            observer.Activate();
+            WinApi.RestoreWindowToForeground(observerHandle);
+            await Until(() => WinApi.GetForegroundWindow() == observerHandle, "reveal observer foreground");
+            SelectNative(folder, "sample.md");
+            await Until(() => HasSelection(folder, new[] { "sample.md" }), "explicit inactive reveal");
+            Console.WriteLine("PASS explicit inactive reveal");
+        }
+        finally { observer.Close(); }
     }
 
     private static async Task TaskbarLaunch()

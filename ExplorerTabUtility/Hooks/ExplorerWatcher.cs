@@ -591,20 +591,25 @@ public class ExplorerWatcher : IHook
         info.SelectionView = view;
         info.OnSelectionChanged = () =>
         {
-            // SHOpenFolderAndSelectItems may address an existing inactive tab
-            // without registering a window. A user cannot select in a hidden tab.
-            if (!_reuseTabs || info.IsConversionSource || info.SelectionActivationPending) return;
+            // SelectionChanged also fires when an inactive folder refreshes or
+            // restores its selection after a save. It is not an open request.
+            // Native reveal requests foreground Explorer themselves; only help
+            // select their inactive tab in an already-foreground window.
+            if (_disposed || !_reuseTabs || info.IsConversionSource || info.SelectionActivationPending ||
+                !_windowEntryDict.TryGetValue(window, out WindowEntry entry) || entry.OptionalKey is not { } tab || tab == 0) return;
+            var parent = WinApi.GetParent(tab);
+            if (!CanHandleInactiveSelection(parent, tab)) return;
             info.SelectionActivationPending = true;
             _dispatcher.BeginInvoke(new Action(async () =>
             {
                 try
                 {
-                    if (_disposed || !_reuseTabs || !_windowEntryDict.ContainsKey(window)) return;
-                    var tab = await GetTabHandle(window);
-                    var parent = new IntPtr(window.HWND);
-                    if (tab == 0 || tab == GetActiveTabHandle(parent) || GetSelectedItems(window)?.Length is not > 0) return;
+                    // Recheck after dispatch: focus, the active tab, and the
+                    // document can all change before this queued callback runs.
+                    if (_disposed || !_reuseTabs || !_windowEntryDict.ContainsKey(window) ||
+                        !ReferenceEquals(info.SelectionView, view) || !CanHandleInactiveSelection(parent, tab) ||
+                        GetSelectedItems(window)?.Length is not > 0) return;
                     await SelectTabByHandle(parent, tab);
-                    WinApi.RestoreWindowToForeground(parent);
                 }
                 catch (COMException) { }
                 finally { info.SelectionActivationPending = false; }
@@ -612,6 +617,9 @@ public class ExplorerWatcher : IHook
         };
         view.SelectionChanged += info.OnSelectionChanged;
     }
+
+    private static bool CanHandleInactiveSelection(nint parent, nint tab) =>
+        parent != 0 && !WinApi.IsIconic(parent) && WinApi.GetForegroundWindow() == parent && tab != GetActiveTabHandle(parent);
 
     private static void DetachSelectionEvents(WindowInfo info)
     {

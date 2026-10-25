@@ -135,7 +135,7 @@ internal static class UpdateChecks
                 initial.ArgumentList.Add("--settings");
                 using var parent = Process.Start(initial)!;
                 await Until(() => { parent.Refresh(); return parent.MainWindowHandle != 0; });
-                await UpdateInstaller.StartHelperAsync(new(source, new Version(3, 0, 1)), target, parent);
+                await UpdateInstaller.StartHelperAsync(new(source, UpdateManager.CurrentVersion), target, parent);
                 var exit = new ProcessStartInfo(Path.Combine(target, "ExplorerTabUtility.exe")) { UseShellExecute = false }; exit.ArgumentList.Add("--exit");
                 using (var request = Process.Start(exit)!) await request.WaitForExitAsync();
                 await parent.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));

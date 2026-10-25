@@ -1,5 +1,17 @@
 # Validation
 
+## Background folder refresh regression (3.0.2)
+
+Reproduced on 2026-10-25 with a selected file in an inactive Explorer tab. On the unfixed code, an ordinary file save and a folder refresh restored the minimized Explorer window, activated the inactive tab, and took foreground focus. SelectionChanged was treated as evidence of an incoming reveal request, even though folder updates also emit this event. A queued event from a previously active view could also act after the user had switched away.
+
+The selection handler now checks the cached tab and its parent at notification time, accepts inactive-tab assistance only when Explorer is already foreground and not minimized, and rechecks focus, the active tab, and the document after dispatch. It no longer restores a window or calls SetForegroundWindow from a selection notification. Explicit utility opens and native reveal/window-registration paths retain their existing presentation behavior. Native SHOpenFolderAndSelectItems foregrounded Explorer independently in the diagnostic probe.
+
+The real-Explorer regression check passed seven background cases: save, atomic replacement, file rename, refresh, folder rename, plus save and refresh with an unminimized background window. Each checks foreground focus and the active native tab throughout the observation period. An explicit reveal into an inactive tab also passed. The existing 13 Explorer selection/navigation/cancellation scenarios passed, including repeated identical selections in inactive tabs and immediate reuse. Settings use the harness's isolated directory.
+
+```powershell
+& tests/ExplorerTabUtility.IntegrationTests/bin/Release/net10.0-windows10.0.19041.0/win-x64/ExplorerTabUtility.IntegrationTests.exe --refresh-regression
+```
+
 ## Release 3.0.1: tray and in-app updates
 
 The user confirmed that the repaired tray menu stays open, dismisses on an outside click, and can be opened again. Version-4 notification callbacks now handle WM_CONTEXTMENU only, queue the menu after the Shell callback, and avoid showing/hiding the owner window or restoring another application's focus.
