@@ -1,5 +1,19 @@
 # Validation
 
+## Explorer chrome investigation and utility-side hardening (3.0.3)
+
+The user reported tab, address-bar, and toolbar input becoming unresponsive while the file view remained usable. Ctrl+L also failed. Window messages still responded, the utility's managed UI thread was idle, and the sampled Explorer UI wait chains did not report a circular wait. Exiting the utility did not restore an already affected window. The user reproduced the symptom in new windows with the utility stopped as well, and the first candidate did not eliminate repeated native Ctrl+T/Ctrl+W failures. Existing Explorer processes remained running, so this does not isolate the underlying Windows state or prove its origin. This release hardens utility-triggered operations; it does not claim to fix every native Explorer chrome freeze.
+
+The investigation did reproduce unnecessary utility-originated tab switching: duplication and selection restoration emitted inactive-view SelectionChanged notifications, which were mistaken for native reveal requests. Selection assistance now ignores an in-progress utility open or tab switch, native Ctrl+W processing, and closing tabs, checking both notification-time and dispatched state. Selection history is cached outside close callbacks. OnQuit records cached state and queues COM cleanup; navigation metadata, view subscription changes, and EnumDone location checks also run outside their notifications. Initial enumeration observation remains synchronous at registration to avoid missing EnumDone; subsequent frame operations yield to the dispatcher.
+
+Tab switches are serialized and stop if the target is closed. A remembered tab index is tried first to reduce intermediate tab switches, and its result is always verified against the actual active HWND; reordered or closed tabs fall back to discovery. Tab switches use PostMessage. Detaching closes the exact Shell browser through Quit rather than posting an undocumented close command to whichever tab is active. Explicit window request timestamps are refreshed when submitted. Cleanup tolerates disconnected objects and repeated teardown. No fixed production settling delay was added.
+
+The focused real-Explorer check passed 12 cycles of utility tab duplication and four rapid native Ctrl+W presses (48 closes), checking tab count and actual address-bar edit focus after each cycle. A separate focused detach check passed for a newly created tab, preserving selection in its separate window and keeping the original address bar responsive. The existing 13 selection, conversion, reuse, and shutdown scenarios also passed after the registration and tab-switch changes. x64 and ARM64 builds completed without warnings or errors. These checks cover the utility routes, rather than proving that native-only Ctrl+T/Ctrl+W cannot fail.
+
+```powershell
+& tests/ExplorerTabUtility.IntegrationTests/bin/Release/net10.0-windows10.0.19041.0/win-x64/ExplorerTabUtility.IntegrationTests.exe --chrome-regression
+```
+
 ## Background folder refresh regression (3.0.2)
 
 Reproduced on 2026-10-25 with a selected file in an inactive Explorer tab. On the unfixed code, an ordinary file save and a folder refresh restored the minimized Explorer window, activated the inactive tab, and took foreground focus. SelectionChanged was treated as evidence of an incoming reveal request, even though folder updates also emit this event. A queued event from a previously active view could also act after the user had switched away.

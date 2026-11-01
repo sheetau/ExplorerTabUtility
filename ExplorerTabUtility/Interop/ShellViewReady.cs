@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Shell32;
 using SHDocVw;
+using ExplorerTabUtility.Helpers;
 
 namespace ExplorerTabUtility.Interop;
 
@@ -32,8 +33,13 @@ internal sealed class ShellViewReady : IDisposable
         _navigationObserved = isExpectedLocation == null;
         _enumerated = () =>
         {
-            if (!_disposed && _navigationObserved && MatchesLocation())
-                _ready.TrySetResult(true);
+            if (_disposed || !_navigationObserved) return;
+            // The expected-location predicate can call back into Explorer.
+            // Return from EnumDone before evaluating it.
+            UiDispatcher.Current.BeginInvoke(() =>
+            {
+                if (!_disposed && MatchesLocation()) _ready.TrySetResult(true);
+            });
         };
         _navigate = (object _, ref object _) => OnNavigation();
         _document = (object _, ref object _) => OnNavigation();

@@ -8,6 +8,9 @@ public class WindowInfo
     internal Shell32.DShellFolderViewEvents_Event? SelectionView { get; set; }
     internal Shell32.DShellFolderViewEvents_SelectionChangedEventHandler? OnSelectionChanged { get; set; }
     internal bool SelectionActivationPending { get; set; }
+    internal bool IsClosing { get; set; }
+    internal bool EventsDetached { get; set; }
+    internal string[]? SelectedItems { get; set; }
     public bool IsConversionSource { get; set; }
     public string? Location { get; set; }
     public string? Name { get; set; }

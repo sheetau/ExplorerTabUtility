@@ -34,6 +34,8 @@ public class ExplorerWatcher : IHook
     private readonly List<WindowRecord> _closedWindows = new();
     private readonly object _windowEntryDictLock = new(), _closedWindowsLock = new(), _processLock = new();
     private readonly SemaphoreSlim _toOpenWindowsLock = new(1);
+    private readonly SemaphoreSlim _tabSwitchLock = new(1);
+    private readonly Dictionary<nint, int> _tabIndexHints = new();
     private readonly ProcessWatcher _processWatcher;
     private int _mainExplorerProcessId;
     private Timer? _explorerCheckTimer;
@@ -157,22 +159,39 @@ public class ExplorerWatcher : IHook
             await _dispatcher.InvokeAsync(() => SelectTabByHandle(windowHandle, tabHandle)).Task.Unwrap();
             return;
         }
-        var tabs = Helper.GetAllExplorerTabs(windowHandle).ToArray();
-        if (tabs.Length == 0) return;
-
-        var activeTab = tabs[0];
-        for (var i = 0; i < tabs.Length; i++)
+        if (_disposed) return;
+        var lifetime = _shellLifetime.Token;
+        try { await _tabSwitchLock.WaitAsync(lifetime); }
+        catch (OperationCanceledException) { return; }
+        try
         {
-            if (activeTab == tabHandle) break;
-
-            SelectTabByIndex(windowHandle, i);
-
-            // ReSharper disable once AccessToModifiedClosure
-            activeTab = await Helper.DoUntilConditionAsync(
-                () => WinApi.FindWindowEx(windowHandle, 0, "ShellTabWindowClass", null),
-                h => h != activeTab);
+            if (!IsLiveTab(windowHandle, tabHandle) || GetActiveTabHandle(windowHandle) == tabHandle) return;
+            var count = Helper.GetAllExplorerTabs(windowHandle).Count();
+            // A hint is verified against the real active HWND after every use.
+            // Reordering or closing tabs can invalidate it without a Shell event.
+            var indices = Enumerable.Range(0, count);
+            if (_tabIndexHints.TryGetValue(tabHandle, out var hint) && hint < count)
+                indices = new[] { hint }.Concat(indices.Where(i => i != hint));
+            foreach (var index in indices)
+            {
+                if (lifetime.IsCancellationRequested || !IsLiveTab(windowHandle, tabHandle)) return;
+                var previous = GetActiveTabHandle(windowHandle);
+                if (previous == tabHandle) return;
+                SelectTabByIndex(windowHandle, index);
+                var active = await Helper.DoUntilConditionAsync(
+                    () => GetActiveTabHandle(windowHandle), h => h != previous,
+                    cancellationToken: lifetime);
+                if (active != tabHandle) continue;
+                _tabIndexHints[tabHandle] = index;
+                return;
+            }
         }
+        finally { _tabSwitchLock.Release(); }
     }
+
+    private static bool IsLiveTab(nint parent, nint tab) =>
+        Helper.IsFileExplorerWindow(parent) && Helper.IsFileExplorerTab(tab) && WinApi.GetParent(tab) == parent;
+
     public void SelectLastTab(nint windowHandle)
     {
         var count = Helper.GetAllExplorerTabs(windowHandle).Count();
@@ -181,7 +200,7 @@ public class ExplorerWatcher : IHook
     public void SelectTabByIndex(nint windowHandle, int index)
     {
         // Send 0xA221 magic command (CTRL + 1...n)
-        WinApi.SendMessage(windowHandle, WinApi.WM_COMMAND, 0xA221, index + 1);
+        WinApi.PostMessage(windowHandle, WinApi.WM_COMMAND, 0xA221, index + 1);
     }
     public async Task RequestToOpenNewTab(nint windowHandle, bool bringToFront = false, bool lockToOpenWindows = true)
     {
@@ -329,9 +348,9 @@ public class ExplorerWatcher : IHook
         var selectedItems = GetSelectedItems(window);
         var windowRecord = new WindowRecord(location, windowHandle, selectedItems);
 
-        // Send 0xA021 magic command (CTRL + W)
-        WinApi.SendMessage(activeTabHandle, WinApi.WM_COMMAND, 0xA021, 1);
-
+        // Quit targets this Shell browser directly. Avoid an undocumented close
+        // command racing with the active tab changing in Explorer's frame.
+        window.Quit();
         await OpenNewWindowWithSelection(windowRecord);
     }
     public void SetTargetWindow(nint windowHandle)
@@ -427,6 +446,11 @@ public class ExplorerWatcher : IHook
             sourceWindow = window;
 
             using var initialView = windowInfo.InitialViewReady;
+            // The initial enumeration sink must be attached synchronously at
+            // registration or EnumDone can be missed. Continue frame operations
+            // after returning from the registration callback.
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
             await GetTabHandle(window);
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -542,28 +566,38 @@ public class ExplorerWatcher : IHook
         // Create strongly-typed handlers so we can remove them later
         windowInfo.OnQuitHandler = () =>
         {
-            var location = windowInfo.Location ?? GetLocation(window);
-            var locationName = windowInfo.Name ?? window.LocationName;
-            var windowRecord = new WindowRecord(location, new IntPtr(window.HWND), name: locationName);
-            lock (_closedWindowsLock) _closedWindows.Add(windowRecord);
-
-            // Home, This PC, etc
-            if (location == _defaultLocation)
-            {
-                RemoveWindowAndUnhookEvents(window, windowInfo);
-                return;
-            }
-
-            windowRecord.SelectedItems = GetSelectedItems(window);
-            RemoveWindowAndUnhookEvents(window, windowInfo);
+            // Explorer is still tearing down its frame while it calls OnQuit.
+            // Do not call its COM interfaces, unadvise sinks, or release its RCW
+            // inside that synchronous notification.
+            if (_disposed || windowInfo.IsClosing) return;
+            windowInfo.IsClosing = true;
+            _windowEntryDict.TryGetValue(window, out WindowEntry entry);
+            var parent = entry.OptionalKey is { } tab ? WinApi.GetParent(tab) : 0;
+            var record = new WindowRecord(windowInfo.Location ?? _defaultLocation, parent,
+                windowInfo.SelectedItems, windowInfo.Name ?? "");
+            lock (_closedWindowsLock) _closedWindows.Add(record);
+            if (entry.OptionalKey is { } closedTab) _tabIndexHints.Remove(closedTab);
+            _windowEntryDict.Remove(window);
+            _dispatcher.BeginInvoke(() => RemoveWindowAndUnhookEvents(window, windowInfo));
         };
 
         windowInfo.OnNavigateHandler = (object _, ref object _) =>
+        {
+            windowInfo.SelectedItems = null;
+            // Return to Explorer before reading the newly installed document or
+            // changing its connection points.
+            _dispatcher.BeginInvoke(() =>
             {
-                windowInfo.Location = GetLocation(window);
-                windowInfo.Name = window.LocationName;
-                AttachSelectionEvents(window, windowInfo);
-            };
+                if (_disposed || windowInfo.IsClosing || !_windowEntryDict.ContainsKey(window)) return;
+                try
+                {
+                    windowInfo.Location = GetLocation(window);
+                    windowInfo.Name = window.LocationName;
+                    AttachSelectionEvents(window, windowInfo);
+                }
+                catch (COMException) { }
+            });
+        };
 
         try
         {
@@ -589,26 +623,28 @@ public class ExplorerWatcher : IHook
         if (view == null || ReferenceEquals(view, info.SelectionView)) return;
         DetachSelectionEvents(info);
         info.SelectionView = view;
+        info.SelectedItems = GetSelectedItems(window);
         info.OnSelectionChanged = () =>
         {
-            // SelectionChanged also fires when an inactive folder refreshes or
-            // restores its selection after a save. It is not an open request.
-            // Native reveal requests foreground Explorer themselves; only help
-            // select their inactive tab in an already-foreground window.
-            if (_disposed || !_reuseTabs || info.IsConversionSource || info.SelectionActivationPending ||
+            if (_disposed || info.IsClosing || info.SelectionActivationPending ||
                 !_windowEntryDict.TryGetValue(window, out WindowEntry entry) || entry.OptionalKey is not { } tab || tab == 0) return;
             var parent = WinApi.GetParent(tab);
-            if (!CanHandleInactiveSelection(parent, tab)) return;
+            // Utility navigation and selection restoration emit the same events
+            // as a native reveal. Never compete with our own tab operation or
+            // Explorer's native Ctrl+W processing.
+            var assistReveal = _reuseTabs && !info.IsConversionSource && _toOpenWindowsLock.CurrentCount != 0 && _tabSwitchLock.CurrentCount != 0 &&
+                !IsNativeTabClosePressed() && CanHandleInactiveSelection(parent, tab);
             info.SelectionActivationPending = true;
             _dispatcher.BeginInvoke(new Action(async () =>
             {
                 try
                 {
-                    // Recheck after dispatch: focus, the active tab, and the
-                    // document can all change before this queued callback runs.
-                    if (_disposed || !_reuseTabs || !_windowEntryDict.ContainsKey(window) ||
-                        !ReferenceEquals(info.SelectionView, view) || !CanHandleInactiveSelection(parent, tab) ||
-                        GetSelectedItems(window)?.Length is not > 0) return;
+                    if (_disposed || info.IsClosing || !_windowEntryDict.ContainsKey(window) ||
+                        !ReferenceEquals(info.SelectionView, view)) return;
+                    info.SelectedItems = GetSelectedItems(window);
+                    if (!assistReveal || !_reuseTabs || _toOpenWindowsLock.CurrentCount == 0 || _tabSwitchLock.CurrentCount == 0 ||
+                        IsNativeTabClosePressed() || !CanHandleInactiveSelection(parent, tab) ||
+                        info.SelectedItems?.Length is not > 0) return;
                     await SelectTabByHandle(parent, tab);
                 }
                 catch (COMException) { }
@@ -617,6 +653,10 @@ public class ExplorerWatcher : IHook
         };
         view.SelectionChanged += info.OnSelectionChanged;
     }
+
+    private static bool IsNativeTabClosePressed() =>
+        KeyboardSimulator.IsKeyPressed((int)VirtualKey.W) &&
+        (KeyboardSimulator.IsKeyPressed((int)VirtualKey.LeftControl) || KeyboardSimulator.IsKeyPressed((int)VirtualKey.RightControl));
 
     private static bool CanHandleInactiveSelection(nint parent, nint tab) =>
         parent != 0 && !WinApi.IsIconic(parent) && WinApi.GetForegroundWindow() == parent && tab != GetActiveTabHandle(parent);
@@ -635,11 +675,13 @@ public class ExplorerWatcher : IHook
 
     private void RemoveWindowAndUnhookEvents(InternetExplorer window, WindowInfo windowInfo, bool useLock = true)
     {
+        if (windowInfo.EventsDetached) return;
+        windowInfo.EventsDetached = true;
         windowInfo.InitialViewReady?.Dispose();
         DetachSelectionEvents(windowInfo);
         // Unsubscribe
-        if (windowInfo.OnQuitHandler != null) window.OnQuit -= windowInfo.OnQuitHandler;
-        if (windowInfo.OnNavigateHandler != null) window.NavigateComplete2 -= windowInfo.OnNavigateHandler;
+        if (windowInfo.OnQuitHandler != null) TryUnsubscribe(() => window.OnQuit -= windowInfo.OnQuitHandler);
+        if (windowInfo.OnNavigateHandler != null) TryUnsubscribe(() => window.NavigateComplete2 -= windowInfo.OnNavigateHandler);
 
         // Remove from dictionary
         if (useLock)
@@ -651,7 +693,14 @@ public class ExplorerWatcher : IHook
             _windowEntryDict.Remove(window);
 
         // Finally, release the COM reference for this InternetExplorer instance
-        Marshal.ReleaseComObject(window);
+        TryUnsubscribe(() => Marshal.ReleaseComObject(window));
+    }
+
+    private static void TryUnsubscribe(Action unsubscribe)
+    {
+        try { unsubscribe(); }
+        catch (COMException) { }
+        catch (InvalidComObjectException) { }
     }
 
     private async Task RestorePreviousWindows()
@@ -670,6 +719,7 @@ public class ExplorerWatcher : IHook
 
         try
         {
+            windowToOpen.CreatedAt = Environment.TickCount;
             lock (_closedWindowsLock)
                 _closedWindows.Add(windowToOpen);
 
@@ -755,6 +805,7 @@ public class ExplorerWatcher : IHook
             await RequestToOpenNewTab(mainWindowHWnd, lockToOpenWindows: false);
             var newTabHandle = await Helper.ListenForNewExplorerTabAsync(mainWindowHWnd, currentTabs, 2_000);
             if (newTabHandle == 0) return false;
+            _tabIndexHints[newTabHandle] = currentTabs.Length;
 
             var window = await Helper.DoUntilNotDefaultAsync(() => GetWindowByTabHandle(newTabHandle), 2_000, 50);
             if (window == null) return false;
@@ -1116,18 +1167,12 @@ public class ExplorerWatcher : IHook
         }
 
         // Unsubscribe from each InternetExplorer instance's events
-        foreach (var (window, windowInfo) in _windowEntryDict)
+        foreach (var (window, windowInfo) in _windowEntryDict.ToArray<WindowEntry>())
         {
-            // Unsubscribe
-            if (windowInfo.OnQuitHandler != null) window.OnQuit -= windowInfo.OnQuitHandler;
-            if (windowInfo.OnNavigateHandler != null) window.NavigateComplete2 -= windowInfo.OnNavigateHandler;
-
-            windowInfo.InitialViewReady?.Dispose();
-            DetachSelectionEvents(windowInfo);
-            // Release the COM object
-            Marshal.ReleaseComObject(window);
+            RemoveWindowAndUnhookEvents(window, windowInfo);
         }
         _windowEntryDict.Clear();
+        _tabIndexHints.Clear();
 
         // Release the ShellWindows COM object
         Marshal.ReleaseComObject(_shellWindows);

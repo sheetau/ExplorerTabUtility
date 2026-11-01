@@ -14,7 +14,7 @@ using ExplorerTabUtility.Managers;
 
 // Opt-in, real Explorer acceptance tests. Uses its own temporary folders/window.
 // Stop another running utility before invoking; restore it after the test run.
-internal static class Program
+internal static partial class Program
 {
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     private static extern int SHParseDisplayName(string name, nint bind, out nint pidl, uint mask, out uint attributes);
@@ -31,6 +31,8 @@ internal static class Program
     private static bool _manualTaskbar;
     private static bool _smoke;
     private static bool _refreshRegression;
+    private static bool _chromeRegression;
+    private static bool _detachOnly;
     private static string? _expectedPinned;
     private sealed class LaunchCompletionListener(TaskCompletionSource<bool> completion) : TraceListener
     {
@@ -49,6 +51,8 @@ internal static class Program
         if (args.Length == 2 && args[0] == "--update-lifecycle") return UpdateChecks.Lifecycle(args[1]).GetAwaiter().GetResult();
         _smoke = args.Contains("--smoke");
         _refreshRegression = args.Contains("--refresh-regression");
+        _detachOnly = args.Contains("--detach-regression");
+        _chromeRegression = args.Contains("--chrome-regression") || _detachOnly;
         _manualTaskbar = args.Contains("--taskbar");
         var pinnedIndex = Array.IndexOf(args, "--taskbar-pinned");
         if (pinnedIndex >= 0)
@@ -131,6 +135,12 @@ internal static class Program
         _watcher.SetTargetWindow(_target);
         _watcher.SetReuseTabs(true);
         _watcher.StartHook();
+
+        if (_chromeRegression)
+        {
+            await ChromeRegression(anchor, folder);
+            return;
+        }
 
         if (_refreshRegression)
         {
